@@ -1,10 +1,18 @@
 package net.bible.service.format.osistohtml.osishandlers
 
+import net.bible.service.format.osistohtml.taghandler.OsisTagHandler
 import org.crosswire.jsword.book.OSISUtil
 import org.xml.sax.Attributes
+import java.security.InvalidParameterException
 
 class OsisToSpeakTextSaxHandler(private val sayReferences: Boolean): OsisToCanonicalTextSaxHandler() {
     private var writingRef: Boolean = false
+    private var osisTagHandlers: HashMap<String, OsisTagHandler>
+
+    init {
+        osisTagHandlers = HashMap()
+        //registerHandler( DivHandler(verseInfo, passageInfo, getWriter()) )
+    }
 
     override fun startElement(namespaceURI: String?, sName: String?, qName: String?, attrs: Attributes?) {
         val name = getName(sName, qName)
@@ -48,4 +56,10 @@ class OsisToSpeakTextSaxHandler(private val sayReferences: Boolean): OsisToCanon
 
 		super.write(s);
     }
+
+	private fun registerHandler(handler: OsisTagHandler) {
+		if (osisTagHandlers.put(handler.getTagName(), handler)!=null) {
+			throw InvalidParameterException("Duplicate handlers for tag "+handler.getTagName());
+		}
+	}
 }
