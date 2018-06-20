@@ -1,7 +1,5 @@
 package net.bible.service.device.speak;
 
-import android.os.Build;
-import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
@@ -30,7 +28,6 @@ import org.crosswire.jsword.passage.Key;
 import org.crosswire.jsword.passage.Verse;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -68,7 +65,10 @@ public class TextToSpeechServiceManager {
     private Locale currentLocale = Locale.getDefault();
 	private static String PERSIST_LOCALE_KEY = "SpeakLocale";
     private static String PERSIST_BIBLE_PROVIDER = "SpeakBibleProvider";
-    
+	public static String EARCON_PRE_TITLE = "[pre-title]";
+	public static String EARCON_PRE_CHAPTER_CHANGE = "[pre-chapter-change]";
+	public static String EARCON_PRE_BOOK_CHANGE = "[pre-book-change]";
+
     private SpeakTextProvider mSpeakTextProvider;
 
 	private GeneralSpeakTextProvider generalSpeakTextProvider;
@@ -228,7 +228,7 @@ public class TextToSpeechServiceManager {
         
         if (!wasPaused) {
 	        // ensure current position is saved which is done during pause
-	        mSpeakTextProvider.pause(mSpeakTiming.getFractionCompleted());
+	        mSpeakTextProvider.savePosition(mSpeakTiming.getFractionCompleted());
         }
 
         // move current position back a bit
@@ -253,7 +253,7 @@ public class TextToSpeechServiceManager {
         
         if (!wasPaused) {
 	        // ensure current position is saved which is done during pause
-        	mSpeakTextProvider.pause(mSpeakTiming.getFractionCompleted());
+        	mSpeakTextProvider.savePosition(mSpeakTiming.getFractionCompleted());
         }
 
         // move current position back a bit
@@ -271,8 +271,9 @@ public class TextToSpeechServiceManager {
         if (isSpeaking()) {
             isPaused = true;
 	        isSpeaking = false;
-	        
-	        mSpeakTextProvider.pause(mSpeakTiming.getFractionCompleted());
+
+			mSpeakTextProvider.savePosition(mSpeakTiming.getFractionCompleted());
+	        mSpeakTextProvider.pause();
 	        
 	        //kill the tts engine because it could be a long ime before restart and the engine may become corrupted or used elsewhere
 	        shutdownTtsEngine();
@@ -285,7 +286,8 @@ public class TextToSpeechServiceManager {
     	try {
 	    	Log.d(TAG, "continue after pause");
             isPaused = false;
-            
+			clearPauseState();
+
 	        // ask TTs to say the text
 	    	startSpeakingInitingIfRequired();
     	} catch (Exception e) {
@@ -324,37 +326,19 @@ public class TextToSpeechServiceManager {
     }
 
 	private void speakNextChunk() {
-		String text = mSpeakTextProvider.getNextTextToSpeak();
-		if (text.length()>0) {
-			speakString(text);
+    	String utteranceId = "";
+		Log.d(TAG, "Adding items to TTS queue. first utterance id: " + uniqueUtteranceNo);
+    	for(int i=0; i<mSpeakTextProvider.getNumItemsToTts(); i++) {
+			utteranceId = UTTERANCE_PREFIX + uniqueUtteranceNo++;
+			SpeakCommand cmd = mSpeakTextProvider.getNextSpeakCommand(utteranceId, i==0);
+			cmd.speak(mTts, utteranceId);
 		}
+		Log.d(TAG, "Added items to TTS queue. Last utterance id: " + utteranceId);
+
+		isSpeaking = true;
 	}
 
-	private void speakString(String text) {
-		if (mTts==null) {
-			Log.e(TAG, "Error: attempt to speak when tts is null.  Text:"+text);
-		} else {
-	    	// Always set the UtteranceId (or else OnUtteranceCompleted will not be called)
-	        String utteranceId = UTTERANCE_PREFIX+uniqueUtteranceNo++;
-	    	Log.d(TAG, "do speak substring of length:"+text.length()+" utteranceId:"+utteranceId);
-			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-				Bundle ttsParams = new Bundle();
-				mTts.speak(text,
-						TextToSpeech.QUEUE_ADD, // handle flush by clearing text queue
-						ttsParams,
-						utteranceId);
-			}
-			else {
-				HashMap<String, String> dummyTTSParams = new HashMap<>();
-				dummyTTSParams.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId);
-				mTts.speak(text,
-						TextToSpeech.QUEUE_ADD, // handle flush by clearing text queue
-						dummyTTSParams);
-			}
-			mSpeakTiming.started(utteranceId, text.length());
-	        isSpeaking = true;
-		}
-    }
+
 
     /** flush cached text
      */
@@ -385,7 +369,7 @@ public class TextToSpeechServiceManager {
         // tts.stop can trigger onUtteranceCompleted so set above flags first to avoid sending of a further text and setting isSpeaking to true
     	shutdownTtsEngine();
     	mSpeakTextProvider.stop();
-
+		clearPauseState();
         fireStateChangeEvent();
     }
 
@@ -500,6 +484,11 @@ public class TextToSpeechServiceManager {
 			if (mTts != null && status == TextToSpeech.SUCCESS) {
 				Log.d(TAG, "Tts initialisation succeeded");
 
+				// Add earcons
+				mTts.addEarcon(EARCON_PRE_TITLE, BibleApplication.getApplication().getPackageName(), R.raw.pageflip);
+				mTts.addEarcon(EARCON_PRE_CHAPTER_CHANGE, BibleApplication.getApplication().getPackageName(), R.raw.medium_pling);
+				mTts.addEarcon(EARCON_PRE_BOOK_CHANGE, BibleApplication.getApplication().getPackageName(), R.raw.long_pling);
+
 				// set speech rate
                 int speakSpeedPercentPref = CommonUtils.getSharedPreferences().getInt("speak_speed_percent_pref", 100);
                 mTts.setSpeechRate(speakSpeedPercentPref/100F);
@@ -525,9 +514,9 @@ public class TextToSpeechServiceManager {
 				} else {
 					// The TTS engine has been successfully initialized.
 					ttsLanguageSupport.addSupportedLocale(locale);
-					int ok = mTts.setOnUtteranceProgressListener(onUtteranceCompletedListener);
+					int ok = mTts.setOnUtteranceProgressListener(utteranceProgressListener);
 					if (ok == TextToSpeech.ERROR) {
-						Log.e(TAG, "Error registering onUtteranceCompletedListener");
+						Log.e(TAG, "Error registering utteranceProgressListener");
 					} else {
 						// everything seems to have succeeded if we get here
 						isOk = true;
@@ -550,23 +539,26 @@ public class TextToSpeechServiceManager {
 		}
 	};
 
-	private final UtteranceProgressListener onUtteranceCompletedListener = new UtteranceProgressListener() {
+	private final UtteranceProgressListener utteranceProgressListener = new UtteranceProgressListener() {
 		@Override
 		public void onStart(String utteranceId) {
-
+			Log.d(TAG, "onStart " +  utteranceId);
+			mSpeakTextProvider.startUtterance(utteranceId);
+			mSpeakTiming.started(utteranceId, mSpeakTextProvider.getText(utteranceId).length());
 		}
 
 		@Override
 		public void onDone(String utteranceId) {
 			Log.d(TAG, "onUtteranceCompleted:"+utteranceId);
 			// pause/rew/ff can sometimes allow old messages to complete so need to prevent move to next sentence if completed utterance is out of date
+
+			// estimate cps
+			mSpeakTextProvider.finishedUtterance(utteranceId);
+			mSpeakTiming.finished(utteranceId);
+
 			if ((!isPaused && isSpeaking) && StringUtils.startsWith(utteranceId, UTTERANCE_PREFIX)) {
 				long utteranceNo = Long.valueOf(StringUtils.removeStart(utteranceId, UTTERANCE_PREFIX));
 				if (utteranceNo == uniqueUtteranceNo-1) {
-					mSpeakTextProvider.finishedUtterance(utteranceId);
-
-					// estimate cps
-					mSpeakTiming.finished(utteranceId);
 
 					// ask TTs to say the text
 					if (mSpeakTextProvider.isMoreTextToSpeak()) {
@@ -581,7 +573,7 @@ public class TextToSpeechServiceManager {
 
 		@Override
 		public void onError(String utteranceId) {
-
+			Log.d(TAG, "onError " + utteranceId);
 		}
 	};
 

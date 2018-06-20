@@ -10,6 +10,7 @@ import net.bible.service.sword.SwordContentFacade;
 import org.apache.commons.lang3.StringUtils;
 import org.crosswire.jsword.book.Book;
 import org.crosswire.jsword.passage.Key;
+import org.jetbrains.annotations.NotNull;
 
 import java.text.BreakIterator;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
     private int nextTextToSpeak = 0;
     // this fraction supports pause/rew/ff; if o then speech occurs normally, if 0.5 then next speech chunk is half completed...
     private float fractionOfNextSentenceSpoken = 0;
+    private String currentText = "";
     
     // Before ICS Android would split up long text for you but since ICS this error occurs:
 	//    if (mText.length() >= MAX_SPEECH_ITEM_CHAR_LENGTH) {
@@ -39,7 +41,17 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
     
     // require DOTALL to allow . to match new lines which occur in books like JOChrist
 	private static Pattern BREAK_PATTERN = Pattern.compile(".{100,2000}[a-z]+[.?!][\\s]{1,}+", Pattern.DOTALL);
-	
+
+	@Override
+	public void startUtterance(@NotNull String utteranceId) {
+
+	}
+
+	@Override
+	public int getNumItemsToTts() {
+		return 1;
+	}
+
 	private static class StartPos {
 		boolean found = false;
 		private int startPosition = 0;
@@ -104,7 +116,9 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 		return nextTextToSpeak<mTextToSpeak.size();
 	}
 
-	public String getNextTextToSpeak() {
+	@NotNull
+	@Override
+	public SpeakCommand getNextSpeakCommand(@NotNull String utteranceId, boolean isCurrent) {
         String text = getNextTextChunk();
         
         // if a pause occurred then skip the first part
@@ -122,8 +136,16 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
         		text = "";
         	}
         }
-        return text;		
+        currentText = text;
+        return new TextCommand(text);
 	}
+
+	@NotNull
+	@Override
+	public String getText(@NotNull String utteranceId) {
+		return currentText;
+	}
+
 
 	private String getNextTextChunk() {
 		String text = peekNextTextChunk();
@@ -140,9 +162,9 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 	
 	/** fractionCompleted may be a fraction of a fraction of the current block if this is not the first pause in this block
 	 * 
-	 * @param fractionCompleted of last block of text returned by getNextTextToSpeak
+	 * @param fractionCompleted of last block of text returned by getNextSpeakCommand
 	 */
-	public void pause(float fractionCompleted) {
+	public void savePosition(float fractionCompleted) {
 		Log.d(TAG, "Pause CurrentSentence:"+nextTextToSpeak);
 
         // accumulate these fractions until we reach the end of a chunk of text
@@ -154,6 +176,8 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 
         backOneChunk();
 	}
+
+	public void pause() {}
 
 	public void stop() {
 		reset();

@@ -38,8 +38,17 @@ class SpeakBible : CustomTitlebarActivityBase() {
         val initialSettings = textProvider.settings
         statusText.text = textProvider.getStatusText()
         synchronize.isChecked = initialSettings.synchronize
-        speakChapterChanges.isChecked = initialSettings.chapterChanges
+        speakBookChanges.isChecked = initialSettings.speakBookChanges
+        speakChapterChanges.isChecked = initialSettings.speakChapterChanges
+        speakTitles.isChecked = initialSettings.speakTitles
+
+        playEarconBook.isChecked = initialSettings.playEarconBook
+        playEarconChapter.isChecked = initialSettings.playEarconChapter
+        playEarconTitles.isChecked = initialSettings.playEarconTitles
+
         continueSentences.isChecked = initialSettings.continueSentences
+        replaceDivineName.isChecked = initialSettings.replaceDivineName
+        delayOnParagraphChanges.isChecked = initialSettings.delayOnParagraphChanges
 
         speakSpeed.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -47,6 +56,7 @@ class SpeakBible : CustomTitlebarActivityBase() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 speedStatus.text = progress.toString()
                 speakControl.setRate(progress/100F)
+                speakControl.updateSettings()
             }
         })
         val initialSpeed = CommonUtils.getSharedPreferences().getInt(speakSpeedPref, 100)
@@ -93,9 +103,23 @@ class SpeakBible : CustomTitlebarActivityBase() {
             bookmarkLabels.get(bookmarkTag.selectedItemPosition).id
         } else SpeakSettings.INVALID_LABEL_ID
 
-        textProvider.settings = SpeakSettings(synchronize.isChecked,
-                speakChapterChanges.isChecked, continueSentences.isChecked,
-                if (autoBookmark.isChecked) labelId else null)
+        textProvider.settings = SpeakSettings(
+                synchronize = synchronize.isChecked,
+
+                speakBookChanges = speakBookChanges.isChecked,
+                speakChapterChanges = speakChapterChanges.isChecked,
+                speakTitles = speakTitles.isChecked,
+
+                playEarconBook = playEarconBook.isChecked,
+                playEarconChapter = playEarconChapter.isChecked,
+                playEarconTitles = playEarconTitles.isChecked,
+
+                continueSentences = continueSentences.isChecked,
+                autoBookmarkLabelId = if (autoBookmark.isChecked) labelId else null,
+                replaceDivineName = replaceDivineName.isChecked,
+                delayOnParagraphChanges = delayOnParagraphChanges.isChecked
+        )
+        speakControl.updateSettings();
     }
 
     fun onButtonClick(button: View) {
