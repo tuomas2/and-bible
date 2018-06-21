@@ -23,8 +23,9 @@ val speakSpeedPref = "speak_speed_percent_pref"
 
 @ActivityScope
 class SpeakBible : CustomTitlebarActivityBase() {
-    private lateinit var speakControl: SpeakControl
-    private lateinit var bookmarkControl: BookmarkControl
+    @Inject lateinit var speakControl: SpeakControl
+    @Inject lateinit var bookmarkControl: BookmarkControl
+
     private lateinit var textProvider: BibleSpeakTextProvider
     private lateinit var bookmarkLabels: List<LabelDto>
 
@@ -49,6 +50,10 @@ class SpeakBible : CustomTitlebarActivityBase() {
         continueSentences.isChecked = initialSettings.continueSentences
         replaceDivineName.isChecked = initialSettings.replaceDivineName
         delayOnParagraphChanges.isChecked = initialSettings.delayOnParagraphChanges
+        
+        val initialSpeed = CommonUtils.getSharedPreferences().getInt(speakSpeedPref, 100)
+        speakSpeed.progress = initialSpeed
+        speedStatus.text = initialSpeed.toString()
 
         speakSpeed.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -59,15 +64,12 @@ class SpeakBible : CustomTitlebarActivityBase() {
                 speakControl.updateSettings()
             }
         })
-        val initialSpeed = CommonUtils.getSharedPreferences().getInt(speakSpeedPref, 100)
-        speakSpeed.progress = initialSpeed
-        speedStatus.text = initialSpeed.toString()
 
         bookmarkLabels = bookmarkControl.assignableLabels
         val adapter = ArrayAdapter<LabelDto>(this, android.R.layout.simple_spinner_dropdown_item, bookmarkLabels)
         bookmarkTag.adapter = adapter
         if(initialSettings.autoBookmarkLabelId != null) {
-            val labelDto = bookmarkLabels.find({ labelDto -> labelDto.id == initialSettings.autoBookmarkLabelId })
+            val labelDto = bookmarkLabels.find { labelDto -> labelDto.id == initialSettings.autoBookmarkLabelId }
             val itemId = bookmarkLabels.indexOf(labelDto)
 
             bookmarkTag.setSelection(itemId)
@@ -80,11 +82,11 @@ class SpeakBible : CustomTitlebarActivityBase() {
 
         bookmarkTag.onItemSelectedListener = object: AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                updateSettings()
+                updateSettings(restart = false)
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {
-                updateSettings()
+                updateSettings(restart = false)
             }
 
         }
@@ -96,7 +98,7 @@ class SpeakBible : CustomTitlebarActivityBase() {
 
     fun onSettingsChange(widget: View) = updateSettings()
 
-    private fun updateSettings() {
+    private fun updateSettings(restart: Boolean = true) {
         bookmarkTag.setEnabled(autoBookmark.isChecked)
 
         val labelId = if (bookmarkTag.selectedItemPosition != INVALID_POSITION) {
@@ -119,7 +121,9 @@ class SpeakBible : CustomTitlebarActivityBase() {
                 replaceDivineName = replaceDivineName.isChecked,
                 delayOnParagraphChanges = delayOnParagraphChanges.isChecked
         )
-        speakControl.updateSettings();
+        if(restart) {
+            speakControl.updateSettings()
+        }
     }
 
     fun onButtonClick(button: View) {
@@ -132,7 +136,6 @@ class SpeakBible : CustomTitlebarActivityBase() {
                     if (speakControl.isPaused) {
                         speakControl.continueAfterPause()
                     } else {
-                        updateSettings()
                         speakControl.speakBible()
                     }
                 forwardButton -> speakControl.forward()
@@ -141,15 +144,5 @@ class SpeakBible : CustomTitlebarActivityBase() {
             Dialogs.getInstance().showErrorMsg(R.string.error_occurred, e)
         }
         statusText.text = textProvider.getStatusText()
-    }
-
-    @Inject
-    internal fun setBookmarkControl(bookmarkControl: BookmarkControl) {
-        this.bookmarkControl = bookmarkControl
-    }
-
-    @Inject
-    internal fun setSpeakControl(speakControl: SpeakControl) {
-        this.speakControl = speakControl
     }
 }

@@ -52,6 +52,12 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 		return 1;
 	}
 
+	@NotNull
+	@Override
+	public String getStatusText() {
+		return "";
+	}
+
 	private static class StartPos {
 		boolean found = false;
 		private int startPosition = 0;
@@ -137,7 +143,7 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
         	}
         }
         currentText = text;
-        return new TextCommand(text);
+        return new TextCommand(text, TextCommand.TextType.NORMAL);
 	}
 
 	@NotNull

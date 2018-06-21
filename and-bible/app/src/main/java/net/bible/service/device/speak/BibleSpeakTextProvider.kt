@@ -174,7 +174,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         return cmd
     }
 
-    fun getMoreSpeakCommands(): SpeakCommandArray {
+    private fun getMoreSpeakCommands(): SpeakCommandArray {
         val cmds = SpeakCommandArray()
 
         var verse = currentVerse
@@ -182,6 +182,13 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         // Skip verse 0, as we merge verse 0 to verse 1 in getSpeakCommands
         if(currentVerse.verse == 0) {
             verse = getNextVerse(verse)
+            if(currentVerse == startVerse) {
+                startVerse = verse
+            }
+            if(endVerse == currentVerse) {
+                endVerse = verse
+            }
+            currentVerse = verse
         }
 
         startVerse = currentVerse
@@ -226,8 +233,8 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         return cmds;
     }
 
-    fun getStatusText(): String {
-        return "${currentState.startVerse.name}${if (currentState.startVerse != currentState.endVerse) " - " + currentState.endVerse.name else ""}"
+    override fun getStatusText(): String {
+        return "${getVerseRange().name} (${currentState.book.abbreviation})"
     }
 
     override fun getText(utteranceId: String): String {
@@ -306,6 +313,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         currentVerse = getPrevVerse(startVerse)
         startVerse = currentVerse
         endVerse = currentVerse
+        EventBus.getDefault().post(SpeakProggressEvent(book, startVerse, settings.synchronize, null))
     }
 
     override fun forward() {
@@ -313,6 +321,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         currentVerse = getNextVerse(startVerse)
         startVerse = currentVerse
         endVerse = currentVerse
+        EventBus.getDefault().post(SpeakProggressEvent(book, startVerse, settings.synchronize, null))
     }
 
     override fun finishedUtterance(utteranceId: String) {}
@@ -322,7 +331,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         currentUtteranceId = utteranceId
         if(state != null) {
             Log.d(TAG, "startUtterance $utteranceId $state")
-            EventBus.getDefault().post(SpeakProggressEvent(state.book, state.startVerse, settings.synchronize))
+            EventBus.getDefault().post(SpeakProggressEvent(state.book, state.startVerse, settings.synchronize, state.command!!))
         }
     }
 
