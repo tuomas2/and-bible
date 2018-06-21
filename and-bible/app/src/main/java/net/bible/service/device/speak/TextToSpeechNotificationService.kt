@@ -2,18 +2,18 @@ package net.bible.service.device.speak
 
 import android.annotation.SuppressLint
 import android.app.*
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.appwidget.AppWidgetManager
+import android.content.*
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.support.annotation.RequiresApi
 import android.util.Log
+import android.widget.RemoteViews
 import de.greenrobot.event.EventBus
 import net.bible.android.BibleApplication
 import net.bible.android.activity.R
+import net.bible.android.activity.SpeakWidget
 import net.bible.android.control.speak.SpeakControl
 import net.bible.android.view.activity.ActivityScope
 import net.bible.android.view.activity.DaggerActivityComponent
@@ -42,9 +42,10 @@ class TextToSpeechNotificationService: Service() {
 
     @Inject lateinit var speakControl: SpeakControl
 
-    private var currentTitle = ""
+    private lateinit var currentTitle: String
     private var currentText = ""
     lateinit var notificationManager: NotificationManager
+    private lateinit var headsetReceiver: BroadcastReceiver
     private lateinit var wakeLock: PowerManager.WakeLock
 
     private val pauseAction: Notification.Action
@@ -68,23 +69,23 @@ class TextToSpeechNotificationService: Service() {
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private fun initialize() {
         Log.d(TAG, "Initialize")
+        currentTitle = getString(R.string.app_name)
         DaggerActivityComponent.builder()
                 .applicationComponent(BibleApplication.getApplication().getApplicationComponent())
                 .build().inject(this)
 
         val powerManager = BibleApplication.getApplication().getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG)
-
-        registerReceiver(
-                object: BroadcastReceiver() {
-                    override fun onReceive(context: Context?, intent: Intent?) {
-                        if (intent?.getIntExtra("state", 0) == 0 && speakControl.isSpeaking) {
-                            speakControl.pause()
-                        } else if (intent?.getIntExtra("state", 0) == 1 && speakControl.isPaused) {
-                            speakControl.continueAfterPause()
-                        }
-                    }
-                }, IntentFilter(Intent.ACTION_HEADSET_PLUG))
+        headsetReceiver = object: BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.getIntExtra("state", 0) == 0 && speakControl.isSpeaking) {
+                    speakControl.pause()
+                } else if (intent?.getIntExtra("state", 0) == 1 && speakControl.isPaused) {
+                    speakControl.continueAfterPause()
+                }
+            }
+        }
+        registerReceiver(headsetReceiver, IntentFilter(Intent.ACTION_HEADSET_PLUG))
 
         EventBus.getDefault().register(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -101,6 +102,7 @@ class TextToSpeechNotificationService: Service() {
             else {
                 buildNotification(pauseAction, true)
             }
+            updateWidgetSpeakButton(it.isSpeaking)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -110,9 +112,15 @@ class TextToSpeechNotificationService: Service() {
         }
     }
 
+    override fun onDestroy() {
+        unregisterReceiver(headsetReceiver)
+        super.onDestroy()
+    }
+
     private fun shutdown() {
-        currentTitle = ""
+        currentTitle = getString(R.string.app_name)
         currentText = ""
+        updateWidgetTexts()
         Log.d(TAG, "Shutdown")
         stopForeground(true)
         if(wakeLock.isHeld) {
@@ -132,7 +140,32 @@ class TextToSpeechNotificationService: Service() {
             }
         }
         buildStartNotification()
+        updateWidgetTexts()
     }
+
+    private fun updateWidgetSpeakButton(speaking: Boolean) {
+        val app = BibleApplication.getApplication()
+        val views = RemoteViews(app.applicationContext.packageName, R.layout.speak_widget)
+        val resource = if(speaking) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        views.setImageViewResource(R.id.speakButton, resource)
+        partialUpdateWidgets(views)
+    }
+
+
+    private fun updateWidgetTexts() {
+        val views = RemoteViews(applicationContext.packageName, R.layout.speak_widget)
+        views.setTextViewText(R.id.statusText, speakControl.statusText)
+        views.setTextViewText(R.id.titleText, currentTitle)
+        partialUpdateWidgets(views)
+    }
+
+    private fun partialUpdateWidgets(views: RemoteViews) {
+        val manager = AppWidgetManager.getInstance(applicationContext)
+        for(id in manager.getAppWidgetIds(ComponentName(application, SpeakWidget::class.java))) {
+            manager.partiallyUpdateAppWidget(id, views)
+        }
+    }
+
 
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private fun buildStartNotification() {
@@ -188,10 +221,9 @@ class TextToSpeechNotificationService: Service() {
         } else {
             Notification.Builder(this)
         }
-        val title = if(currentTitle.isEmpty()) getString(R.string.app_name) else currentTitle
 
         builder.setSmallIcon(R.drawable.ichthys_alpha)
-                .setContentTitle(title)
+                .setContentTitle(currentTitle)
                 .setSubText(speakControl.statusText)
                 .setShowWhen(false)
                 .setContentText(currentText)
@@ -200,7 +232,6 @@ class TextToSpeechNotificationService: Service() {
                 .setStyle(style)
                 .addAction(generateAction(android.R.drawable.ic_media_rew, getString(R.string.rewind), ACTION_REWIND))
                 .addAction(action)
-                .addAction(generateAction(R.drawable.ic_media_stop, getString(R.string.stop), ACTION_STOP))
                 .addAction(generateAction(android.R.drawable.ic_media_ff, getString(R.string.forward), ACTION_FAST_FORWARD))
                 .setOnlyAlertOnce(true)
 

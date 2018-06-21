@@ -31,7 +31,6 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
                              private val bookmarkControl: BookmarkControl,
                              initialBook: SwordBook,
                              initialVerse: Verse) : SpeakTextProvider {
-
     private data class State(val book: SwordBook,
                              val startVerse: Verse,
                              val endVerse: Verse,
@@ -305,20 +304,55 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         }
     }
 
-    private fun getPrevVerse(verse: Verse): Verse = bibleTraverser.getPrevVerse(book, verse)
     private fun getNextVerse(verse: Verse): Verse = bibleTraverser.getNextVerse(book, verse)
+
+    private fun rewind(amount: SpeakSettings.RewindAmount) {
+        when(amount) {
+         SpeakSettings.RewindAmount.FULL_CHAPTER -> {
+             if (startVerse.verse <= 1) {
+                 currentVerse = bibleTraverser.getPrevChapter(book, startVerse)
+             } else {
+                 currentVerse = Verse(startVerse.versification, startVerse.book, startVerse.chapter, 1)
+             }
+         }
+         SpeakSettings.RewindAmount.ONE_VERSE -> {
+             currentVerse = bibleTraverser.getPrevVerse(book, startVerse)
+         }
+         SpeakSettings.RewindAmount.TEN_VERSES -> {
+            currentVerse = startVerse
+            for(i in 1..10) {
+                currentVerse = bibleTraverser.getPrevVerse(book, currentVerse)
+            }
+         }
+        }
+        startVerse = currentVerse
+        endVerse = currentVerse
+    }
 
     override fun rewind() {
         reset()
-        currentVerse = getPrevVerse(startVerse)
-        startVerse = currentVerse
-        endVerse = currentVerse
+        rewind(settings.rewindAmount)
         EventBus.getDefault().post(SpeakProggressEvent(book, startVerse, settings.synchronize, null))
+    }
+
+    override fun autoRewind() {
+        rewind(settings.autoRewindAmount)
     }
 
     override fun forward() {
         reset()
-        currentVerse = getNextVerse(startVerse)
+        when(settings.rewindAmount) {
+            SpeakSettings.RewindAmount.FULL_CHAPTER ->
+                currentVerse = bibleTraverser.getNextChapter(book, startVerse)
+            SpeakSettings.RewindAmount.ONE_VERSE ->
+                currentVerse = bibleTraverser.getNextVerse(book, startVerse)
+            SpeakSettings.RewindAmount.TEN_VERSES -> {
+                currentVerse = startVerse
+                for (i in 1..10) {
+                    currentVerse = bibleTraverser.getNextVerse(book, currentVerse)
+                }
+            }
+        }
         startVerse = currentVerse
         endVerse = currentVerse
         EventBus.getDefault().post(SpeakProggressEvent(book, startVerse, settings.synchronize, null))

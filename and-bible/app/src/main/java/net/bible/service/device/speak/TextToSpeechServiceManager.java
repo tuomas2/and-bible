@@ -287,7 +287,7 @@ public class TextToSpeechServiceManager {
 	    	Log.d(TAG, "continue after pause");
             isPaused = false;
 			clearPauseState();
-
+			mSpeakTextProvider.autoRewind();
 	        // ask TTs to say the text
 	    	startSpeakingInitingIfRequired();
     	} catch (Exception e) {
@@ -334,8 +334,6 @@ public class TextToSpeechServiceManager {
 			cmd.speak(mTts, utteranceId);
 		}
 		Log.d(TAG, "Added items to TTS queue. Last utterance id: " + utteranceId);
-
-		isSpeaking = true;
 	}
 
 
