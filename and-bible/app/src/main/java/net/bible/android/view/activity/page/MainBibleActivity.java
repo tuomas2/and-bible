@@ -8,13 +8,7 @@ import android.support.v4.view.GestureDetectorCompat;
 import android.support.v7.view.ActionMode;
 import android.util.Log;
 
-import android.view.ContextMenu;
-import android.view.KeyEvent;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
-import android.view.MotionEvent;
-import android.view.View;
+import android.view.*;
 
 import net.bible.android.BibleApplication;
 import net.bible.android.activity.R;
@@ -54,6 +48,7 @@ import net.bible.service.device.speak.event.SpeakProgressEvent;
  */
 public class MainBibleActivity extends CustomTitlebarActivityBase implements VerseActionModeMediator.ActionModeMenuDisplay {
 
+	private static final String SCREEN_KEEP_ON_PREF = "screen_keep_on_pref";
 	private DocumentViewManager documentViewManager;
 
 	private BibleContentManager bibleContentManager;
@@ -118,8 +113,19 @@ public class MainBibleActivity extends CustomTitlebarActivityBase implements Ver
 
 		// force the screen to be populated
 		PassageChangeMediator.getInstance().forcePageUpdate();
+		refreshScreenKeepOn();
 	}
 
+	private void refreshScreenKeepOn() {
+		boolean keepOn = CommonUtils.getSharedPreferences().getBoolean(SCREEN_KEEP_ON_PREF, false);
+		if(keepOn) {
+			getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+		}
+		else {
+			getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+		}
+	}
 
 
 	@Override
@@ -154,7 +160,7 @@ public class MainBibleActivity extends CustomTitlebarActivityBase implements Ver
 	@Override
 	protected void onRestart() {
 		super.onRestart();
-
+		refreshScreenKeepOn();
 		if (mWholeAppWasInBackground) {
 			mWholeAppWasInBackground = false;
 			refreshIfNightModeChange();
