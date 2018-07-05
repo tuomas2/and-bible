@@ -75,8 +75,6 @@ public class MainBibleActivity extends CustomTitlebarActivityBase implements Ver
 
 	private SearchControl searchControl;
 
-	private SpeakControl speakControl;
-
 	private static final String TAG = "MainBibleActivity";
 
 	public MainBibleActivity() {
@@ -420,11 +418,6 @@ public class MainBibleActivity extends CustomTitlebarActivityBase implements Ver
 
 	protected BibleContentManager getBibleContentManager() {
 		return bibleContentManager;
-	}
-
-	@Inject
-	void setSpeakControl(SpeakControl speakControl) {
-		this.speakControl = speakControl;
 	}
 
 	@Inject
