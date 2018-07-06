@@ -162,17 +162,46 @@
         </activity>
 
         <service android:name="net.bible.service.device.speak.TextToSpeechNotificationService"/>
-        
-        <receiver android:name=".SpeakWidget">
+
+        <receiver android:name=".SpeakWidget1">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
             </intent-filter>
 
             <meta-data
                     android:name="android.appwidget.provider"
-                    android:resource="@xml/speak_widget_info"/>
+                    android:resource="@xml/speak_widget1_info"/>
         </receiver>
-        
+
+        <receiver android:name=".SpeakWidget2">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+
+            <meta-data
+                    android:name="android.appwidget.provider"
+                    android:resource="@xml/speak_widget2_info"/>
+        </receiver>
+
+        <receiver android:name=".SpeakWidget3">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+
+            <meta-data
+                    android:name="android.appwidget.provider"
+                    android:resource="@xml/speak_widget3_info"/>
+        </receiver>
+        <receiver android:name=".SpeakBookmarkWidget">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+
+            <meta-data
+                    android:name="android.appwidget.provider"
+                    android:resource="@xml/speak_bookmark_widget_info"/>
+        </receiver>
+
         <!-- allow use with Samsung Note multi-window http://stackoverflow.com/questions/14111052/adding-multi-window-support-to-android-application -->
 		<uses-library android:required="false" android:name="com.sec.android.app.multiwindow" />
 		<meta-data android:name="com.sec.android.support.multiwindow" android:value="true" />

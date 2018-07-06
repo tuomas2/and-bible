@@ -10,6 +10,7 @@ import net.bible.android.control.speak.PlaybackSettings
 import net.bible.android.control.speak.SpeakSettings
 import net.bible.android.control.versification.BibleTraverser
 import net.bible.service.common.CommonUtils
+import net.bible.service.db.bookmark.BookmarkDto
 import net.bible.service.db.bookmark.LabelDto
 import net.bible.service.format.usermarks.BookmarkFormatSupport
 import net.bible.service.format.usermarks.MyNoteFormatSupport
@@ -19,6 +20,7 @@ import org.crosswire.jsword.book.Books
 import org.crosswire.jsword.book.sword.SwordBook
 import org.crosswire.jsword.passage.RangedPassage
 import org.crosswire.jsword.passage.Verse
+import org.crosswire.jsword.passage.VerseRange
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +31,7 @@ import org.junit.After
 import org.mockito.Mockito.mock
 import org.robolectric.RobolectricTestRunner
 
+var idCount = 0;
 
 @Config(qualifiers="fi", constants = BuildConfig::class, application = TestBibleApplication::class)
 open class AbstractSpeakTests {
@@ -41,6 +44,10 @@ open class AbstractSpeakTests {
         book = Books.installed().getBook("FinRK") as SwordBook
     }
 
+	@After
+	fun tearDown(){
+		DatabaseResetter.resetDatabase();
+	}
     protected fun getVerse(verseStr: String): Verse {
         val verse = book.getKey(verseStr) as RangedPassage
         return verse.getVerseAt(0)
@@ -53,11 +60,12 @@ open class AbstractSpeakTests {
     protected fun nextText(): String {
         var cmd: SpeakCommand
         do {
-            cmd = provider.getNextSpeakCommand("id-1")
+            val utteranceId = "id-${idCount++}"
+            cmd = provider.getNextSpeakCommand(utteranceId)
+            provider.startUtterance(utteranceId)
         } while (!(cmd is TextCommand))
 
         return cmd.text
-        //return provider.getNextSpeakCommand().filter({it is TextCommand}).joinToString(" ") { it.toString() }
     }
 
     companion object {
@@ -75,7 +83,7 @@ open class OsisToBibleSpeakTests: AbstractSpeakTests() {
     @Before
     override fun setup() {
         super.setup()
-        s = SpeakSettings(synchronize = false, continueSentences = false, playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true))
+        s = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true))
     }
 
     @Test
@@ -219,7 +227,7 @@ open class OsisToBibleSpeakTests: AbstractSpeakTests() {
 
     @Test
     fun testDivinenameInTitle() { // TOOD: this is not yet released bible!
-        val s = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = true),continueSentences = false, replaceDivineName = true)
+        val s = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = true),replaceDivineName = true)
         book = Books.installed().getBook("STLK2017") as SwordBook
         val cmds = SpeakCommandArray()
         cmds.addAll(swordContentFacade.getSpeakCommands(s, book, getVerse("Exod.19.1")))
@@ -232,7 +240,7 @@ open class OsisToBibleSpeakTests: AbstractSpeakTests() {
 
     @Test
     fun testDivinenameInText() { // TOOD: this is not yet released bible!
-        val s = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = true),continueSentences = false, replaceDivineName = true)
+        val s = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = true),replaceDivineName = true)
         book = Books.installed().getBook("STLK2017") as SwordBook
 
         val cmds = swordContentFacade.getSpeakCommands(s, book, getVerse("Exod.19.3"))
@@ -248,7 +256,7 @@ class TestPersistence: AbstractSpeakTests () {
         super.setup()
         provider = BibleSpeakTextProvider(swordContentFacade, bibleTraverser, bookmarkControl,
                 book, getVerse("Ps.14.1"))
-        provider.settings = SpeakSettings(synchronize = false, continueSentences = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = false))
+        provider.settings = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = false))
     }
 
     @Test
@@ -284,29 +292,16 @@ class AutoBookmarkTests: AbstractSpeakTests () {
         provider = BibleSpeakTextProvider(swordContentFacade, bibleTraverser, bookmarkControl,
                 book, getVerse("Ps.14.1"))
         var label = LabelDto();
-		label.setName("tts");
+        label.name = "tts";
 		label = bookmarkControl.saveOrUpdateLabel(label)
 
-        provider.settings = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true), continueSentences = false, autoBookmarkLabelId = label.id)
+        val settings = SpeakSettings(autoBookmarkLabelId = label.id)
+        settings.save()
     }
-	@After
-	fun tearDown(){
-		val bookmarks = bookmarkControl.getAllBookmarks()
-		for (dto in bookmarks) {
-			bookmarkControl.deleteBookmark(dto)
-		}
-
-		val labels = bookmarkControl.getAllLabels()
-		for (dto in labels) {
-			bookmarkControl.deleteLabel(dto);
-		}
-
-		DatabaseResetter.resetDatabase();
-	}
 
     @Test
     fun autoBookmarkDisabled() {
-        provider.settings = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true), continueSentences = false, autoBookmarkLabelId = null)
+        provider.settings = SpeakSettings(autoBookmarkLabelId = null)
         provider.setupReading(book, getVerse("Ps.14.1"))
         text = nextText()
         provider.pause();
@@ -314,13 +309,81 @@ class AutoBookmarkTests: AbstractSpeakTests () {
     }
 
     @Test
-    fun autoBookmarkOnPause() {
+    fun autoBookmarkOnPauseAddLabel() {
+        var dto = BookmarkDto()
+        val verse = getVerse("Ps.14.1")
+        dto.verseRange = VerseRange(verse.versification, verse)
+        dto = bookmarkControl.addOrUpdateBookmark(dto)
+        var labelDto= LabelDto()
+        labelDto.name = "Another"
+        labelDto = bookmarkControl.saveOrUpdateLabel(labelDto)
+        bookmarkControl.setBookmarkLabels(dto, listOf(labelDto))
+
+        provider.setupReading(book, verse)
+        text = nextText()
+        provider.pause();
+        labelDto.id = provider.settings.autoBookmarkLabelId
+        dto = bookmarkControl.getBookmarkByKey(verse)
+        assertThat(bookmarkControl.getBookmarkLabels(dto).size, equalTo(2))
+        provider.pause()
+        assertThat(bookmarkControl.getBookmarkLabels(dto).size, equalTo(2))
+        provider.prepareForContinue()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        provider.stop()
+        assertThat(bookmarkControl.getBookmarkLabels(dto).size, equalTo(1))
+    }
+
+    @Test
+    fun autoBookmarkOnPauseAddLabelAndSettings() {
+        val settings = SpeakSettings(restoreSettingsFromBookmarks = true, autoBookmarkLabelId = SpeakSettings.load().autoBookmarkLabelId)
+        settings.save()
+        var dto = BookmarkDto()
+        val verse = getVerse("Ps.14.1")
+        dto.verseRange = VerseRange(verse.versification, verse)
+        dto = bookmarkControl.addOrUpdateBookmark(dto)
+        var labelDto= LabelDto()
+        labelDto.name = "Another"
+        labelDto = bookmarkControl.saveOrUpdateLabel(labelDto)
+        bookmarkControl.setBookmarkLabels(dto, listOf(labelDto))
+
+        provider.setupReading(book, verse)
+        text = nextText()
+        provider.pause();
+        labelDto.id = provider.settings.autoBookmarkLabelId
+        dto = bookmarkControl.getBookmarkByKey(verse)
+        assertThat(dto.playbackSettings, notNullValue())
+        assertThat(bookmarkControl.getBookmarkLabels(dto).size, equalTo(2))
+        provider.pause()
+        assertThat(bookmarkControl.getBookmarkLabels(dto).size, equalTo(2))
+        provider.prepareForContinue()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        provider.stop()
+        dto = bookmarkControl.getBookmarkByKey(verse)
+        assertThat(dto.playbackSettings, nullValue())
+        assertThat(bookmarkControl.getBookmarkLabels(dto).size, equalTo(1))
+    }
+
+    @Test
+    fun autoBookmarkOnPauseCreateNewSaveSettings() {
+        val settings = SpeakSettings(restoreSettingsFromBookmarks = true, autoBookmarkLabelId = SpeakSettings.load().autoBookmarkLabelId)
+        settings.save()
         provider.setupReading(book, getVerse("Ps.14.1"))
         text = nextText()
         provider.pause();
         val labelDto = LabelDto()
         labelDto.id = provider.settings.autoBookmarkLabelId
         val bookmark = bookmarkControl.getBookmarksWithLabel(labelDto).get(0)
+        assertThat(bookmark.playbackSettings, notNullValue())
         assertThat(bookmark.verseRange.start.osisID, equalTo("Ps.14.1"))
 
         assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
@@ -328,7 +391,33 @@ class AutoBookmarkTests: AbstractSpeakTests () {
         provider.pause();
         assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
         provider.prepareForContinue()
-        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(0))
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        text = nextText()
+        provider.stop()
+        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1)) // new bookmark with same label has been created
+    }
+
+    @Test
+    fun autoBookmarkOnPauseCreateNew() {
+        provider.setupReading(book, getVerse("Ps.14.1"))
+        text = nextText()
+        provider.pause();
+        val labelDto = LabelDto()
+        labelDto.id = provider.settings.autoBookmarkLabelId
+        val bookmark = bookmarkControl.getBookmarksWithLabel(labelDto).get(0)
+        //assertThat(bookmark.playbackSettings, notNullValue())
+        assertThat(bookmark.verseRange.start.osisID, equalTo("Ps.14.1"))
+
+        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
+        // test that it does not add another bookmark if there's already one with same key
+        provider.pause();
+        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
+        provider.prepareForContinue()
+        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
     }
 
     @Test
@@ -343,20 +432,27 @@ class AutoBookmarkTests: AbstractSpeakTests () {
         assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
         provider.setupReading(book, getVerse("Ps.14.2"))
         provider.prepareForContinue()
-        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(0))
+        assertThat(bookmarkControl.getBookmarksWithLabel(labelDto).size, equalTo(1))
     }
 }
 
 @RunWith(RobolectricTestRunner::class)
-class SpeakWithoutContinueSentences: AbstractSpeakTests (){
+class SpeakWithContinueSentences : AbstractSpeakTests() {
     @Before
     override fun setup() {
         super.setup()
         provider = BibleSpeakTextProvider(swordContentFacade, bibleTraverser, bookmarkControl,
                 book, getVerse("Ps.14.1"))
-        provider.settings = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true,  speakTitles = false), continueSentences = false)
+        provider.settings = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = false))
     }
 
+    private fun checkRomansBeginning() {
+        assertThat(text, equalTo("Kirja vaihtui. Roomalaiskirje Luku 1."))
+        text = nextText();
+        assertThat(text, startsWith("Paavali, "))
+        assertThat(text, endsWith("meidän Herrastamme."))
+        assertThat(range(), equalTo("Rom.1.1-Rom.1.3"))
+    }
 
     @Test
     fun textProgression() {
@@ -387,62 +483,6 @@ class SpeakWithoutContinueSentences: AbstractSpeakTests (){
         assertThat(text, endsWith("tekee hyvää."))
     }
 
-    private fun checkRomansBeginning() {
-        assertThat(text, equalTo("Kirja vaihtui. Roomalaiskirje Luku 1."))
-        text = nextText()
-        assertThat(text, startsWith("Paavali, "))
-        assertThat(text, endsWith("evankeliumia,"))
-    }
-
-    @Test
-    fun chapterChangeMessage() {
-        // Test that genesis follows revelations
-        provider.setupReading(book, getVerse("Rev.22.21"))
-        assertThat(range(), equalTo("Rev.22.21"))
-        text = nextText()
-        assertThat(range(), equalTo("Rev.22.21"))
-        text = nextText()
-        assertThat(range(), equalTo("Gen.1.1"))
-        // test that 1. is replaced with "Ensimmäinen" (first)
-        assertThat(text, equalTo("Kirja vaihtui. Ensimmäinen Mooseksen kirja Luku 1."))
-        text = nextText()
-        assertThat(range(), equalTo("Gen.1.1"))
-        assertThat(text, startsWith("Alussa"))
-
-        provider.setupReading(book, getVerse("Rom.1.1"))
-        text = nextText()
-        assertThat(text, startsWith("Paavali, "))
-        assertThat(text, endsWith("evankeliumia,"))
-
-        text = nextText()
-        assertThat(text, startsWith("jonka Jumala"))
-        assertThat(text, endsWith("Kirjoituksissa,"))
-
-        provider.setupReading(book, getVerse("Acts.28.31"))
-        text = nextText()
-        text = nextText()
-        checkRomansBeginning()
-        provider.setupReading(book, getVerse("Acts.28.30"))
-        text = nextText()
-        text = nextText()
-        text = nextText()
-        checkRomansBeginning()
-        provider.setupReading(book, getVerse("Acts.28.29"))
-        text = nextText()
-        text = nextText()
-        text = nextText()
-        text = nextText()
-        checkRomansBeginning()
-        for(i in 1..32) {
-            text = nextText()
-        }
-        assertThat(text, equalTo("Roomalaiskirje Luku 2."))
-        for(i in 1..30) {
-            text = nextText()
-        }
-        assertThat(text, equalTo("Roomalaiskirje Luku 3."))
-    }
-
     @Test
     @Config(qualifiers="en")
     fun testBookWithoutOldTestament() {
@@ -460,60 +500,6 @@ class SpeakWithoutContinueSentences: AbstractSpeakTests (){
         assertThat(text, startsWith("The Gospel According"))
     }
 
-    @Test
-    fun pauseRewindForward() {
-        provider.setupReading(book, getVerse("Rom.5.20"))
-        text = nextText()
-        assertThat(range(), equalTo("Rom.5.20"))
-        assertThat(text, startsWith("Laki kuitenkin"))
-        assertThat(text, endsWith("ylenpalttiseksi,"))
-
-        provider.pause()
-        assertThat(range(), equalTo("Rom.5.20"))
-        text = nextText()
-        assertThat(range(), equalTo("Rom.5.20"))
-        assertThat(text, startsWith("Laki kuitenkin"))
-        assertThat(text, endsWith("ylenpalttiseksi,"))
-
-        provider.rewind(null)
-        assertThat(range(), equalTo("Rom.5.19"))
-        text = nextText()
-        assertThat(range(), equalTo("Rom.5.19"))
-        assertThat(text, startsWith("Niin kuin"))
-        assertThat(text, endsWith("vanhurskaiksi."))
-        provider.pause()
-        assertThat(range(), equalTo("Rom.5.19"))
-        text = nextText()
-        assertThat(range(), equalTo("Rom.5.19"))
-        assertThat(text, startsWith("Niin kuin"))
-        assertThat(text, endsWith("vanhurskaiksi."))
-
-        provider.forward(null)
-        assertThat(range(), equalTo("Rom.5.20"))
-        text = nextText()
-        assertThat(range(), equalTo("Rom.5.20"))
-        assertThat(text, startsWith("Laki kuitenkin"))
-        assertThat(text, endsWith("ylenpalttiseksi,"))
-    }
-}
-
-@RunWith(RobolectricTestRunner::class)
-class SpeakWithContinueSentences : AbstractSpeakTests() {
-    @Before
-    override fun setup() {
-        super.setup()
-        provider = BibleSpeakTextProvider(swordContentFacade, bibleTraverser, bookmarkControl,
-                book, getVerse("Ps.14.1"))
-        provider.settings = SpeakSettings(synchronize = false, playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = false), continueSentences = true)
-    }
-
-    private fun checkRomansBeginning() {
-        assertThat(text, equalTo("Kirja vaihtui. Roomalaiskirje Luku 1."))
-        text = nextText();
-        assertThat(text, startsWith("Paavali, "))
-        assertThat(text, endsWith("meidän Herrastamme."))
-        assertThat(range(), equalTo("Rom.1.1-Rom.1.3"))
-    }
     
     @Test
     fun chapterChangeMessage() {
@@ -571,7 +557,43 @@ class SpeakWithContinueSentences : AbstractSpeakTests() {
     }
 
     @Test
-    fun pauseRewindForward() {
+    fun pauseRewindForwardOneVerse() {
+        provider.setupReading(book, getVerse("Rom.5.20"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.20-Rom.5.21"))
+        assertThat(text, startsWith("Laki kuitenkin"))
+        assertThat(text, endsWith("meidän Herramme, kautta."))
+
+        provider.pause()
+        assertThat(range(), equalTo("Rom.5.20"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.20-Rom.5.21"))
+        assertThat(text, startsWith("Laki kuitenkin"))
+        assertThat(text, endsWith("meidän Herramme, kautta."))
+
+        provider.rewind(SpeakSettings.RewindAmount.ONE_VERSE)
+        assertThat(range(), equalTo("Rom.5.19"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.19"))
+        assertThat(text, startsWith("Niin kuin"))
+        assertThat(text, endsWith("vanhurskaiksi."))
+        provider.pause()
+        assertThat(range(), equalTo("Rom.5.19"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.19"))
+        assertThat(text, startsWith("Niin kuin"))
+        assertThat(text, endsWith("vanhurskaiksi."))
+
+        provider.forward(SpeakSettings.RewindAmount.ONE_VERSE)
+        assertThat(range(), equalTo("Rom.5.20"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.20-Rom.5.21"))
+        assertThat(text, startsWith("Laki kuitenkin"))
+        assertThat(text, endsWith("meidän Herramme, kautta."))
+    }
+
+    @Test
+    fun pauseRewindForwardNormal() {
         provider.setupReading(book, getVerse("Rom.5.20"))
         text = nextText()
         assertThat(range(), equalTo("Rom.5.20-Rom.5.21"))
@@ -586,23 +608,106 @@ class SpeakWithContinueSentences : AbstractSpeakTests() {
         assertThat(text, endsWith("meidän Herramme, kautta."))
 
         provider.rewind(null)
-        assertThat(range(), equalTo("Rom.5.19"))
+        assertThat(range(), equalTo("Rom.5.1"))
         text = nextText()
-        assertThat(range(), equalTo("Rom.5.19"))
-        assertThat(text, startsWith("Niin kuin"))
-        assertThat(text, endsWith("vanhurskaiksi."))
-        provider.pause()
-        assertThat(range(), equalTo("Rom.5.19"))
-        text = nextText()
-        assertThat(range(), equalTo("Rom.5.19"))
-        assertThat(text, startsWith("Niin kuin"))
-        assertThat(text, endsWith("vanhurskaiksi."))
+        assertThat(range(), equalTo("Rom.5.1"))
 
         provider.forward(null)
-        assertThat(range(), equalTo("Rom.5.20"))
+        assertThat(range(), equalTo("Rom.6.1"))
         text = nextText()
-        assertThat(range(), equalTo("Rom.5.20-Rom.5.21"))
-        assertThat(text, startsWith("Laki kuitenkin"))
-        assertThat(text, endsWith("meidän Herramme, kautta."))
+        assertThat(range(), equalTo("Rom.6.1"))
+    }
+
+    @Test
+    fun rewind() {
+        provider.settings = SpeakSettings(playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true))
+        provider.setupReading(book, getVerse("Rom.5.11"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.11"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.12"))
+        assertThat(text, equalTo("Aadam ja Kristus")) // title
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.12")) // verse text
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.13"))
+
+        provider.rewind(null)
+        assertThat(range(), equalTo("Rom.5.12"))
+        provider.rewind(null)
+        assertThat(range(), equalTo("Rom.5.1"))
+        provider.rewind(null)
+        assertThat(range(), equalTo("Rom.4.1"))
+
+        provider.forward(null)
+        assertThat(range(), equalTo("Rom.5.1"))
+        provider.forward(null)
+        assertThat(range(), equalTo("Rom.6.1"))
+    }
+
+    @Test
+    fun rewind2() {
+        provider.settings = SpeakSettings(playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true))
+        provider.setupReading(book, getVerse("Rom.5.11"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.11"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.12"))
+        assertThat(text, equalTo("Aadam ja Kristus")) // title
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.12")) // verse text
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.13"))
+
+        provider.rewind(null)
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.12"))
+        provider.rewind(null)
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.1"))
+        provider.rewind(null)
+        text = nextText()
+        assertThat(range(), equalTo("Rom.4.1"))
+
+        provider.forward(null)
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.1"))
+        provider.forward(null)
+        text = nextText()
+        assertThat(range(), equalTo("Rom.6.1"))
+    }
+
+    @Test
+    fun autorewind() {
+        var settings = SpeakSettings(playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true), autoRewindAmount = SpeakSettings.RewindAmount.ONE_VERSE)
+        settings.save()
+        provider.setupReading(book, getVerse("Rom.5.11"))
+        provider.autoRewind()
+        assertThat(range(), equalTo("Rom.5.10"))
+
+        settings = SpeakSettings(playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true), autoRewindAmount = SpeakSettings.RewindAmount.TEN_VERSES)
+        settings.save()
+        provider.setupReading(book, getVerse("Rom.5.12"))
+        provider.autoRewind()
+        assertThat(range(), equalTo("Rom.5.2"))
+
+        settings = SpeakSettings(playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true), autoRewindAmount = SpeakSettings.RewindAmount.SMART)
+        settings.save()
+        provider.setupReading(book, getVerse("Rom.5.12"))
+        provider.autoRewind()
+        assertThat(range(), equalTo("Rom.5.1"))
+    }
+
+    @Test
+    fun forward() {
+        provider.settings = SpeakSettings(playbackSettings = PlaybackSettings(speakChapterChanges = true, speakTitles = true))
+
+        provider.setupReading(book, getVerse("Rom.5.11"))
+        text = nextText()
+        assertThat(range(), equalTo("Rom.5.11"))
+        provider.forward(null)
+        assertThat(range(), equalTo("Rom.6.1"))
+        provider.forward(null)
+        assertThat(range(), equalTo("Rom.7.1"))
     }
 }

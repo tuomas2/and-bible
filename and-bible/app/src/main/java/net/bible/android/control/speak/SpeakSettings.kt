@@ -37,35 +37,50 @@ data class PlaybackSettings (
     }
 }
 
+data class SpeakSettingsChangedEvent(val speakSettings: SpeakSettings, val updateBookmark: Boolean = false, val sleepTimerChanged: Boolean = false)
+
 @Serializable
 data class SpeakSettings(@Optional val synchronize: Boolean = true,
-                         @Optional val continueSentences: Boolean = true,
                          @Optional val autoBookmarkLabelId: Long? = null,
                          @Optional val replaceDivineName: Boolean = false,
-                         @Optional val delayOnParagraphChanges: Boolean = true,
                          @Optional val autoRewindAmount: RewindAmount = RewindAmount.NONE,
                          @Optional val restoreSettingsFromBookmarks: Boolean = false,
-                         @Optional var playbackSettings: PlaybackSettings = PlaybackSettings()
+                         @Optional var playbackSettings: PlaybackSettings = PlaybackSettings(),
+                         @Optional var sleepTimer: Int = 0,
+                         @Optional var lastSleepTimer: Int = 10
                          ) {
     enum class RewindAmount {NONE, ONE_VERSE, TEN_VERSES, SMART}
 
-    fun toJson(): String {
+    private fun toJson(): String {
         return JSON.stringify(this)
     }
 
-    fun saveSharedPreferences() {
+    fun makeCopy(): SpeakSettings {
+        val s = this.copy()
+        s.playbackSettings = this.playbackSettings.copy()
+        return s
+    }
+
+    fun save(updateBookmark: Boolean = false) {
         if(currentSettings?.equals(this) != true) {
             CommonUtils.getSharedPreferences().edit().putString(PERSIST_SETTINGS, toJson()).apply()
             Log.d(TAG, "SpeakSettings saved! $this")
-            EventBus.getDefault().post(this)
-            currentSettings = this
+            val oldSettings = currentSettings
+            currentSettings = this.makeCopy()
+            EventBus.getDefault().post(SpeakSettingsChangedEvent(this,
+                    updateBookmark && oldSettings?.playbackSettings?.equals(this.playbackSettings) != true,
+                     oldSettings?.sleepTimer != this.sleepTimer))
         }
     }
 
-    companion object {
-        var currentSettings: SpeakSettings? = null
+    fun save() {
+        save(false)
+    }
 
-        fun fromJson(jsonString: String): SpeakSettings {
+    companion object {
+        private var currentSettings: SpeakSettings? = null
+
+        private fun fromJson(jsonString: String): SpeakSettings {
             return try {
                 JSON(nonstrict = true).parse(jsonString)
             } catch (ex: SerializationException) {
@@ -75,11 +90,13 @@ data class SpeakSettings(@Optional val synchronize: Boolean = true,
             }
         }
 
-        fun fromSharedPreferences(): SpeakSettings {
-            val sharedPreferences = CommonUtils.getSharedPreferences()
-            val settings = fromJson(sharedPreferences.getString(PERSIST_SETTINGS, ""))
-            Log.d(TAG, "SpeakSettings loaded! $settings")
-            return settings
+        fun load(): SpeakSettings {
+            val rv = currentSettings?.makeCopy()?: {
+                val sharedPreferences = CommonUtils.getSharedPreferences()
+                val settings = fromJson(sharedPreferences.getString(PERSIST_SETTINGS, ""))
+                settings }()
+            Log.d(TAG, "SpeakSettings loaded! $rv")
+            return rv
         }
     }
 }

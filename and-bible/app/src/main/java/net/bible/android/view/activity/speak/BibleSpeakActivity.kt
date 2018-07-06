@@ -2,6 +2,7 @@ package net.bible.android.view.activity.speak
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.*
 import android.widget.AdapterView.INVALID_POSITION
@@ -9,22 +10,22 @@ import de.greenrobot.event.EventBus
 import kotlinx.android.synthetic.main.speak_bible.*
 import net.bible.android.activity.R
 import net.bible.android.control.bookmark.BookmarkControl
-import net.bible.android.control.speak.INVALID_LABEL_ID
-import net.bible.android.control.speak.PlaybackSettings
-import net.bible.android.control.speak.SpeakControl
-import net.bible.android.control.speak.SpeakSettings
+import net.bible.android.control.speak.*
 import net.bible.android.view.activity.ActivityScope
-import net.bible.android.view.activity.base.CustomTitlebarActivityBase
 import net.bible.android.view.activity.base.Dialogs
 import net.bible.service.db.bookmark.LabelDto
-import net.bible.service.device.speak.event.SpeakProggressEvent
+import net.bible.service.device.speak.event.SpeakProgressEvent
 import javax.inject.Inject
 
 @ActivityScope
-class BibleSpeakActivity : CustomTitlebarActivityBase() {
+class BibleSpeakActivity : AbstractSpeakActivity() {
     @Inject lateinit var speakControl: SpeakControl
     @Inject lateinit var bookmarkControl: BookmarkControl
     private lateinit var bookmarkLabels: List<LabelDto>
+
+    companion object {
+        const val TAG = "BibleSpeakActivity"
+    }
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,10 +65,10 @@ class BibleSpeakActivity : CustomTitlebarActivityBase() {
                 updateSettings()
             }
         }
-        resetView(SpeakSettings.fromSharedPreferences())
+        resetView(SpeakSettings.load())
     }
 
-    private fun resetView(settings: SpeakSettings) {
+    override fun resetView(settings: SpeakSettings) {
         statusText.text = speakControl.getStatusText()
         synchronize.isChecked = settings.synchronize
         speakBookChanges.isChecked = settings.playbackSettings.speakBookChanges
@@ -101,15 +102,19 @@ class BibleSpeakActivity : CustomTitlebarActivityBase() {
         }
         speakSpeed.progress = settings.playbackSettings.speed
         speedStatus.text = "${settings.playbackSettings.speed} %"
+        sleepTimer.isChecked = settings.sleepTimer > 0
+        sleepTimer.text = if(settings.sleepTimer>0) getString(R.string.sleep_timer_timer_set, settings.sleepTimer) else getString(R.string.conf_sleep_timer)
 
     }
 
-    fun onEventMainThread(ev: SpeakProggressEvent) {
+    fun onEventMainThread(ev: SpeakProgressEvent) {
         statusText.text = speakControl.getStatusText()
     }
 
-    fun onEventMainThread(ev: SpeakSettings) {
-        resetView(ev)
+
+    fun onEventMainThread(ev: SpeakSettingsChangedEvent) {
+        currentSettings = ev.speakSettings;
+        resetView(ev.speakSettings)
     }
 
     fun onSettingsChange(widget: View) = updateSettings()
@@ -142,14 +147,18 @@ class BibleSpeakActivity : CustomTitlebarActivityBase() {
                     SpeakSettings.RewindAmount.TEN_VERSES }
                 else {
                     SpeakSettings.RewindAmount.SMART},
-                restoreSettingsFromBookmarks = restoreSettingsFromBookmarks.isChecked
+                restoreSettingsFromBookmarks = restoreSettingsFromBookmarks.isChecked,
+                sleepTimer = currentSettings.sleepTimer,
+                lastSleepTimer = currentSettings.lastSleepTimer
         )
-        settings.saveSharedPreferences()
+        settings.save(updateBookmark = true)
     }
 
     fun onButtonClick(button: View) {
         try {
             when (button) {
+                prevButton -> speakControl.rewind(SpeakSettings.RewindAmount.ONE_VERSE)
+                nextButton -> speakControl.forward(SpeakSettings.RewindAmount.ONE_VERSE)
                 rewindButton -> speakControl.rewind()
                 stopButton -> speakControl.stop()
                 pauseButton -> speakControl.pause()
@@ -163,6 +172,7 @@ class BibleSpeakActivity : CustomTitlebarActivityBase() {
             }
         } catch (e: Exception) {
             Dialogs.getInstance().showErrorMsg(R.string.error_occurred, e)
+            Log.e(TAG, "Error: ", e)
         }
         statusText.text = speakControl.getStatusText()
     }

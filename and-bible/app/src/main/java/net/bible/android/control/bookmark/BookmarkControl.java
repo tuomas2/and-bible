@@ -27,6 +27,7 @@ import net.bible.service.sword.SwordContentFacade;
 
 import org.crosswire.jsword.book.BookCategory;
 import org.crosswire.jsword.passage.Key;
+import org.crosswire.jsword.passage.Verse;
 import org.crosswire.jsword.passage.VerseRange;
 import org.crosswire.jsword.versification.Versification;
 
@@ -76,14 +77,16 @@ public class BookmarkControl {
 	}
 
 	public void updateBookmarkSettings(Key key, PlaybackSettings settings) {
-		BookmarkDto bookmarkDto = getBookmarkByKey(key);
+		Verse v = (Verse) key;
+		if(v.getVerse() == 0) {
+			v = new Verse(v.getVersification(), v.getBook(), v.getChapter(), 1);
+		}
+		BookmarkDto bookmarkDto = getBookmarkByKey(v);
+
 		if(bookmarkDto != null && bookmarkDto.getPlaybackSettings() != null) {
-			List<LabelDto> labels = getBookmarkLabels(bookmarkDto);
 			bookmarkDto.setPlaybackSettings(settings);
-			deleteBookmark(bookmarkDto);
-			bookmarkDto.setId(null);
-			bookmarkDto = addBookmark(bookmarkDto);
-			setBookmarkLabels(bookmarkDto, labels);
+			addOrUpdateBookmark(bookmarkDto);
+			Log.d("SpeakBookmark", "Updated bookmark settings "+bookmarkDto + settings.getSpeed());
 		}
 	}
 
@@ -101,7 +104,7 @@ public class BookmarkControl {
 				// prepare new bookmark and add to db
 				bookmarkDto = new BookmarkDto();
 				bookmarkDto.setVerseRange(verseRange);
-				bookmarkDto = addBookmark(bookmarkDto);
+				bookmarkDto = addOrUpdateBookmark(bookmarkDto);
 
 				success = bookmarkDto != null;
 				message = R.string.bookmark_added;
@@ -204,15 +207,16 @@ public class BookmarkControl {
 	}
 
 	/** create a new bookmark */
-	public BookmarkDto addBookmark(BookmarkDto bookmark) {
+	public BookmarkDto addOrUpdateBookmark(BookmarkDto bookmark) {
 		BookmarkDBAdapter db = new BookmarkDBAdapter();
 		BookmarkDto newBookmark = null;
 		try {
 			db.open();
-			newBookmark = db.insertBookmark(bookmark);
+			newBookmark = db.insertOrUpdateBookmark(bookmark);
 		} finally {
 			db.close();
 		}
+		EventBus.getDefault().post(new SynchronizeWindowsEvent());
 		return newBookmark;
 	}
 
@@ -254,11 +258,16 @@ public class BookmarkControl {
 
 	/** get bookmark with the same start verse as this key if it exists or return null */
 	public BookmarkDto getBookmarkByKey(Key key) {
+		return getBookmarkByOsisRef(key.getOsisRef());
+	}
+
+	/** get bookmark with the same start verse as this key if it exists or return null */
+	public BookmarkDto getBookmarkByOsisRef(String osisRef) {
 		BookmarkDBAdapter db = new BookmarkDBAdapter();
 		BookmarkDto bookmark = null;
 		try {
 			db.open();
-			bookmark = db.getBookmarkByStartKey(key.getOsisRef());
+			bookmark = db.getBookmarkByStartKey(osisRef);
 		} finally {
 			db.close();
 		}
@@ -278,6 +287,7 @@ public class BookmarkControl {
 				db.close();
 			}
 		}
+		EventBus.getDefault().post(new SynchronizeWindowsEvent());
 		return bOk;
 	}
 
@@ -307,6 +317,10 @@ public class BookmarkControl {
 
 	/** get bookmarks associated labels */
 	public List<LabelDto> getBookmarkLabels(BookmarkDto bookmark) {
+		if(bookmark == null) {
+			return new ArrayList<>();
+		}
+
 		List<LabelDto> labels;
 
 		BookmarkDBAdapter db = new BookmarkDBAdapter();
@@ -347,6 +361,7 @@ public class BookmarkControl {
 		} finally {
 			db.close();
 		}
+		EventBus.getDefault().post(new SynchronizeWindowsEvent(true));
 	}
 
 	public LabelDto saveOrUpdateLabel(LabelDto label) {

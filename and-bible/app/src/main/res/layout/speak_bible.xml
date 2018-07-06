@@ -164,7 +164,6 @@
                     android:layout_width="match_parent"
                     android:layout_height="15dip"/>
             </LinearLayout>
-
             <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -198,6 +197,14 @@
                             android:layout_height="wrap_content"
                             android:id="@+id/synchronize"
                             android:onClick="onSettingsChange"/>
+                    <CheckBox
+                            android:layout_marginStart="@dimen/speak_row_padding"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/conf_sleep_timer"
+                            android:id="@+id/sleepTimer"
+                            android:onClick="setSleepTime"
+                            />
                 </LinearLayout>
                 <LinearLayout
                         android:layout_width="match_parent"
@@ -286,7 +293,7 @@
                         android:textColor="@color/speak_title_color"
                         android:padding="@dimen/speak_title_padding"
                         android:textStyle="bold"
-                        android:text="@string/conf_advanced_settings"
+                        android:text="@string/conf_speak_bookmarking_settings"
                         />
                 <LinearLayout
                         android:layout_width="match_parent"
@@ -356,11 +363,12 @@
         <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingTop="20dip"
+                android:paddingTop="5dip"
                 android:paddingBottom="5dip"
                 android:paddingStart="@dimen/speak_row_padding"
                 android:textColor="@color/speak_subtitle_color"
                 android:id="@+id/statusText"
+                android:background="@color/blue_grey_50"
                 android:text="*Gen.1.1*"/>
 
         <!-- Button bar with OK button -->
@@ -379,7 +387,15 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:onClick="onButtonClick"/>
-
+            <ImageButton
+                    android:id="@+id/prevButton"
+                    android:src="@android:drawable/ic_media_previous"
+                    android:layout_width="0dip"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:onClick="onButtonClick"
+                    android:contentDescription="@string/speak_previous"
+                    />
             <ImageButton
                     android:id="@+id/stopButton"
                     android:src="@drawable/ic_media_stop"
@@ -406,7 +422,14 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:onClick="onButtonClick"/>
-
+            <ImageButton
+                    android:id="@+id/nextButton"
+                    android:src="@android:drawable/ic_media_next"
+                    android:layout_width="0dip"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:onClick="onButtonClick"
+                    android:contentDescription="@string/speak_next"/>
             <ImageButton
                     android:id="@+id/forwardButton"
                     android:src="@android:drawable/ic_media_ff"
