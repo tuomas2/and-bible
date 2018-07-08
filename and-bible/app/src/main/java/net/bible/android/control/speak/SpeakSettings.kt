@@ -12,10 +12,8 @@ const val TAG = "SpeakSettings"
 
 @Serializable
 data class PlaybackSettings (
-                         @Optional val speakBookChanges: Boolean = true,
                          @Optional val speakChapterChanges: Boolean = true,
                          @Optional val speakTitles: Boolean = true,
-                         @Optional val playEarconBook: Boolean = true,
                          @Optional val playEarconChapter: Boolean = false,
                          @Optional val playEarconTitles: Boolean = true,
                          @Optional var speed: Int = 100
@@ -47,7 +45,11 @@ data class SpeakSettings(@Optional val synchronize: Boolean = true,
                          @Optional val restoreSettingsFromBookmarks: Boolean = false,
                          @Optional var playbackSettings: PlaybackSettings = PlaybackSettings(),
                          @Optional var sleepTimer: Int = 0,
-                         @Optional var lastSleepTimer: Int = 10
+                         @Optional var lastSleepTimer: Int = 10,
+                         // General book speak settings
+                         @Optional var queue: Boolean = true,
+                         @Optional var repeat: Boolean = false,
+                         @Optional var numPagesToSpeakId: Int = 0
                          ) {
     enum class RewindAmount {NONE, ONE_VERSE, TEN_VERSES, SMART}
 

@@ -62,6 +62,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         }
 
     private var lastVerseWithTitle: Verse? = null
+    private var lastVerseAutorewinded: Verse? = null
     private val utteranceState = HashMap<String, State>()
     private var currentUtteranceId = ""
     private val currentCommands = SpeakCommandArray()
@@ -76,7 +77,6 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         }
 
     init {
-        ABEventBus.getDefault().register(this)
         book = initialBook
         setupBook(initialBook)
         startVerse = initialVerse
@@ -91,14 +91,14 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         settings = SpeakSettings.load()
     }
 
-    fun onEvent(ev: SpeakSettingsChangedEvent) {
-        this.settings = ev.speakSettings
-        Log.d(TAG, "SpeakSettings updated: $ev")
+    override fun updateSettings(speakSettingsChangedEvent: SpeakSettingsChangedEvent) {
+        this.settings = speakSettingsChangedEvent.speakSettings
+        Log.d(TAG, "SpeakSettings updated: $speakSettingsChangedEvent")
         val bookmarkDto = bookmarkDto
-        if(ev.updateBookmark && bookmarkDto != null) {
+        if(speakSettingsChangedEvent.updateBookmark && bookmarkDto != null) {
             // If playback is paused or we are speaking, we need to update bookmark that is upon startVerse
             // (of which we will continue playback if unpaused)
-            bookmarkDto.playbackSettings = ev.speakSettings.playbackSettings
+            bookmarkDto.playbackSettings = speakSettingsChangedEvent.speakSettings.playbackSettings
             this.bookmarkDto = bookmarkControl.addOrUpdateBookmark(bookmarkDto)
         }
     }
@@ -124,6 +124,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
     fun setupReading(book: SwordBook, verse: Verse) {
         reset()
         setupBook(book)
+        lastVerseAutorewinded = null
         currentVerse = verse
         startVerse = verse
         endVerse = verse
@@ -145,13 +146,9 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         val bookName = bibleBooks[verse.book.osis]
 
         if(prevVerse.book != verse.book) {
-            if(settings.playbackSettings.playEarconBook) {
-                cmds.add(PreBookChangeCommand(settings))
-            }
-            if(settings.playbackSettings.speakBookChanges) {
-                cmds.add(TextCommand("${res.getString(R.string.speak_book_changed)} $bookName ${res.getString(R.string.speak_chapter_changed)} ${verse.chapter}. "))
-                cmds.add(SilenceCommand())
-            }
+            cmds.add(PreBookChangeCommand())
+            cmds.add(TextCommand("${res.getString(R.string.speak_book_changed)} $bookName ${res.getString(R.string.speak_chapter_changed)} ${verse.chapter}. "))
+            cmds.add(SilenceCommand())
         }
         else if(prevVerse.chapter != verse.chapter) {
             if(settings.playbackSettings.playEarconChapter) {
@@ -245,16 +242,26 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
     override fun pause() {
         reset()
         currentVerse = startVerse
+        updateBookmark()
+    }
+
+    private fun updateBookmark() {
+        val bookmarkStart = bookmarkDto?.verseRange?.start
+        if(bookmarkStart != null && startVerse.ordinal < bookmarkStart.ordinal) {
+            ABEventBus.getDefault().post(SpeakProgressEvent(book, bookmarkStart, settings.synchronize, null))
+            clearNotificationAndWidgetTitles()
+            return
+        }
         removeBookmark()
         saveBookmark()
     }
+
 
     override fun savePosition(fractionCompleted: Float) {}
 
     override fun stop() {
         reset()
-        removeBookmark()
-        saveBookmark()
+        updateBookmark()
         bookmarkDto = null
     }
 
@@ -336,9 +343,15 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
     private fun getNextVerse(verse: Verse): Verse = bibleTraverser.getNextVerse(book, verse)
 
     override fun rewind(amount: SpeakSettings.RewindAmount?) {
+        rewind(amount, false)
+    }
+
+    fun rewind(amount: SpeakSettings.RewindAmount?, autoRewind: Boolean) {
         val lastTitle = this.lastVerseWithTitle
         reset()
         val rewindAmount = amount?: SpeakSettings.RewindAmount.SMART
+        val minimumVerse = Verse(startVerse.versification, startVerse.book, 1, 1)
+
         when(rewindAmount) {
          SpeakSettings.RewindAmount.SMART -> {
              if(lastTitle != null && !lastTitle.equals(startVerse)) {
@@ -363,6 +376,11 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
          }
          SpeakSettings.RewindAmount.NONE -> {}
         }
+
+        if(autoRewind && currentVerse.ordinal < minimumVerse.ordinal) {
+            currentVerse = minimumVerse
+        }
+
         startVerse = currentVerse
         endVerse = currentVerse
 
@@ -379,7 +397,10 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
     }
 
     override fun autoRewind() {
-        rewind(settings.autoRewindAmount)
+        if(lastVerseAutorewinded?.equals(startVerse) != true) {
+            rewind(settings.autoRewindAmount, true)
+            lastVerseAutorewinded = startVerse
+        }
     }
 
     override fun forward(amount: SpeakSettings.RewindAmount?) {
