@@ -2,8 +2,10 @@ package net.bible.android.view.activity.page;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v4.view.GestureDetectorCompat;
 import android.support.v7.view.ActionMode;
 import android.util.Log;
@@ -25,10 +27,10 @@ import net.bible.android.control.event.window.CurrentWindowChangedEvent;
 import net.bible.android.control.page.CurrentPage;
 import net.bible.android.control.page.window.WindowControl;
 import net.bible.android.control.search.SearchControl;
-import net.bible.android.control.speak.SpeakControl;
 import net.bible.android.view.activity.DaggerMainBibleActivityComponent;
 import net.bible.android.view.activity.MainBibleActivityModule;
 import net.bible.android.view.activity.base.CustomTitlebarActivityBase;
+import net.bible.android.view.activity.base.Dialogs;
 import net.bible.android.view.activity.page.actionbar.BibleActionBarManager;
 import net.bible.android.view.activity.page.actionmode.VerseActionModeMediator;
 import net.bible.android.view.activity.page.screen.DocumentViewManager;
@@ -47,6 +49,8 @@ import net.bible.service.device.speak.event.SpeakProgressEvent;
  *      The copyright to this program is held by it's author.
  */
 public class MainBibleActivity extends CustomTitlebarActivityBase implements VerseActionModeMediator.ActionModeMenuDisplay {
+	static final int BACKUP_SAVE_REQUEST = 0;
+	static final int BACKUP_RESTORE_REQUEST = 1;
 
 	private static final String SCREEN_KEEP_ON_PREF = "screen_keep_on_pref";
 	private DocumentViewManager documentViewManager;
@@ -268,6 +272,30 @@ public class MainBibleActivity extends CustomTitlebarActivityBase implements Ver
 		} else if (mainMenuCommandHandler.isDocumentChanged(requestCode)) {
 			updateActionBarButtons();
 		}
+
+	}
+
+	@Override
+	public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+		switch(requestCode) {
+			case BACKUP_SAVE_REQUEST:
+				if(grantResults.length>0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+					backupControl.backupDatabase();
+				}
+				else {
+					Dialogs.getInstance().showMsg(R.string.error_occurred);
+				}
+				break;
+			case BACKUP_RESTORE_REQUEST:
+				if(grantResults.length>0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+					backupControl.restoreDatabase();
+				}
+				else {
+					Dialogs.getInstance().showMsg(R.string.error_occurred);
+				}
+				break;
+		}
+		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 	}
 
 	@Override
