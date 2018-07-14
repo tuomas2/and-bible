@@ -121,7 +121,7 @@ public class BibleTraverser {
 				book = nextBook;
 			}
 			else {
-				book = BibleBook.GEN;
+				book = v11n.getFirstBook();
 			}
 			chapter=1;
 
