@@ -4,10 +4,11 @@
       android:installLocation="auto"
       android:versionName="2.11.0.245" android:versionCode="245">
 
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 	<uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:maxSdkVersion="22" android:name="android.permission.READ_PHONE_STATE" />
 
 	<!-- allow use on Google TV -->
 	<uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -19,7 +20,8 @@
 		android:anyDensity="true"
 	/>
 	
-	<application android:icon="@drawable/ichthys" android:label="@string/app_name" android:name="net.bible.android.BibleApplication" android:theme="@style/AppThemeDay" android:allowBackup="true" android:resizeableActivity="true">
+	<application android:icon="@drawable/ichthys" android:label="@string/app_name" android:name="net.bible.android.BibleApplication" android:theme="@style/AppThemeDay" android:allowBackup="true" android:resizeableActivity="true"
+                 android:fullBackupContent="@xml/backup_descriptor">
         <!-- deprecated but necessary to prevent old shortcut breaking -->
         <activity android:name=".StartupActivity"
                   android:label="@string/app_name"
@@ -161,6 +163,8 @@
         </activity>
 
         <service android:name="net.bible.service.device.speak.TextToSpeechNotificationManager$ForegroundService"/>
+
+        <receiver android:name="net.bible.service.device.speak.TextToSpeechNotificationManager$NotificationReceiver" android:exported="false"/>
 
         <receiver android:name=".SpeakWidget1">
             <intent-filter>

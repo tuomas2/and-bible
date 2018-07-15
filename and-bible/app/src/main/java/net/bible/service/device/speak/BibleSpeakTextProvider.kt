@@ -219,7 +219,8 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
     }
 
     override fun getStatusText(): String {
-        return "${getVerseRange().name} (${currentState.book.abbreviation})"
+        val percent = bibleTraverser.getPercentOfBook(currentState.startVerse)
+        return "${getVerseRange().name} - $percent% - ${currentState.book.abbreviation}"
     }
 
     override fun getText(utteranceId: String): String {
@@ -396,13 +397,6 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
                 TextCommand("", type=TextCommand.TextType.TITLE)))
         ABEventBus.getDefault().post(SpeakProgressEvent(book, startVerse, false,
                 TextCommand("", type=TextCommand.TextType.NORMAL)))
-    }
-
-    override fun autoRewind() {
-        if(lastVerseAutorewinded?.equals(startVerse) != true) {
-            rewind(settings.autoRewindAmount, true)
-            lastVerseAutorewinded = startVerse
-        }
     }
 
     override fun forward(amount: SpeakSettings.RewindAmount?) {

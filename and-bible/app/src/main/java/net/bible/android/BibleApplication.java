@@ -48,8 +48,8 @@ public class BibleApplication extends Application{
 	private static BibleApplication singleton;
 
 	private static final String TAG = "BibleApplication";
-	private TextToSpeechNotificationManager ttsManager;
-	
+	private TextToSpeechNotificationManager ttsNotificationManager;
+
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -79,14 +79,14 @@ public class BibleApplication extends Application{
 		upgradePersistentData();
 		
 		// initialise link to Android progress control display in Notification bar
-		ProgressNotificationManager.getInstance().initialise();
+		ProgressNotificationManager.Companion.getInstance().initialise();
 
 		// various initialisations required every time at app startup
 		getApplicationComponent().warmUp().warmUpSwordEventually();
 
 		localeOverrideAtStartup = LocaleHelper.getOverrideLanguage(this);
 
-		ttsManager = new TextToSpeechNotificationManager();
+		ttsNotificationManager = new TextToSpeechNotificationManager();
 	}
 
 	public ApplicationComponent getApplicationComponent() {
@@ -213,7 +213,7 @@ public class BibleApplication extends Application{
 	@Override
 	public void onTerminate() {
 		Log.i(TAG, "onTerminate");
-		ttsManager.destroy();
+		ttsNotificationManager.destroy();
 		super.onTerminate();
 		ABEventBus.getDefault().unregisterAll();
 	}

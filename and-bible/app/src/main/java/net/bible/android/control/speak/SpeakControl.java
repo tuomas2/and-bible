@@ -81,6 +81,14 @@ public class SpeakControl {
 		ABEventBus.getDefault().register(this);
 	}
 
+	@Override
+	protected void finalize() {
+		// Allow timer threads to be stopped on GC (good for tests)
+		stopTimer();
+		sleepTimer.cancel();
+		sleepTimer = null;
+	}
+
 	/** return a list of prompt ids for the speak screen associated with the current document type
 	 */
 	public NumPagesToSpeakDefinition[] calculateNumPagesToSpeakDefinitions() {
@@ -264,15 +272,20 @@ public class SpeakControl {
 		}
 	}
 
+	public void pause(boolean willContinueAfterThis) {
+
+		pause(willContinueAfterThis, !willContinueAfterThis);
+	}
+
 	public void pause() {
-		pause(false);
+		pause(false, true);
 	}
 
 	public void setupMockedTts() {
 		textToSpeechServiceManager.get().setupMockedTts();
 	}
 
-	public void pause(boolean willContinueAfterThis) {
+	public void pause(boolean willContinueAfterThis, boolean toast) {
 		if(!willContinueAfterThis) {
 			stopTimer();
 		}
@@ -290,7 +303,7 @@ public class SpeakControl {
 				pauseToastText += "\n" + timeProgress;
 			}
 
-			if(!willContinueAfterThis) {
+			if(!willContinueAfterThis && toast) {
 				Toast.makeText(BibleApplication.getApplication(), pauseToastText, Toast.LENGTH_SHORT).show();
 			}
 		}
@@ -305,7 +318,7 @@ public class SpeakControl {
 		if(!automated) {
 			prepareForSpeaking();
 		}
-		textToSpeechServiceManager.get().continueAfterPause(automated);
+		textToSpeechServiceManager.get().continueAfterPause();
 	}
 
 	public void stop() {
@@ -357,7 +370,7 @@ public class SpeakControl {
 			timerTask = new TimerTask() {
 				@Override
 				public void run() {
-					pause();
+					pause(false, false);
 				}
 			};
 			sleepTimer.schedule(timerTask, sleepTimerAmount * 60000);

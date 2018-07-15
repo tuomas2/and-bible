@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.support.v4.app.NotificationCompat
 import android.support.v4.media.app.NotificationCompat.MediaStyle
+import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import net.bible.android.BibleApplication
 import net.bible.android.activity.R
@@ -25,8 +26,7 @@ import javax.inject.Inject
 @ActivityScope
 class TextToSpeechNotificationManager {
     companion object {
-        private const val UPDATE_NOTIFICATION = "update_notification"
-
+        private const val ACTION_UPDATE_NOTIFICATION = "update_notification"
         private const val ACTION_PLAY="action_play"
         private const val ACTION_PAUSE="action_pause"
         private const val ACTION_REWIND="action_rewind"
@@ -44,20 +44,24 @@ class TextToSpeechNotificationManager {
         private lateinit var wakeLock: PowerManager.WakeLock
 
         private var foregroundNotification: Notification? = null
+
+        private var instance: TextToSpeechNotificationManager? = null
+        private var foreground = false
     }
 
     class ForegroundService: Service() {
         companion object {
             const val START_SERVICE="action_start_service"
             const val STOP_FOREGROUND="action_stop_foreground"
+            const val STOP_FOREGROUND_REMOVE_NOTIFICATION="action_stop_foreground_remove_notification"
         }
 
-        private var foreground = false
 
         override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             when(intent?.action) {
                 START_SERVICE -> start()
                 STOP_FOREGROUND -> stop()
+                STOP_FOREGROUND_REMOVE_NOTIFICATION -> stop(true)
                 else -> {
                     Log.e(TAG, "Unknown action ${intent?.action} in intent $intent")
                 }
@@ -85,20 +89,22 @@ class TextToSpeechNotificationManager {
             // removed. Thus we need to build notification again. This will be done
             // TextToSpeechNotificationManager via this intent.
 
-            val intent = Intent(UPDATE_NOTIFICATION)
+            Log.d(TAG, "onDestroy")
+            val intent = Intent(application, NotificationReceiver::class.java).apply {
+                action = ACTION_UPDATE_NOTIFICATION
+            }
             application.sendBroadcast(intent)
             stop()
         }
 
-        private fun stop() {
+        private fun stop(removeNotification: Boolean = false) {
             if(!foreground) {
                 return
             }
 
             Log.d(TAG, "STOP_SERVICE")
             wakeLock.release()
-            stopForeground(false)
-            foregroundNotification = null;
+            stopForeground(removeNotification)
             foreground = false
         }
 
@@ -107,12 +113,34 @@ class TextToSpeechNotificationManager {
         }
     }
 
-    @Inject lateinit var speakControl: SpeakControl
+    class NotificationReceiver: BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val speakControl = instance!!.speakControl
+                val action = intent?.action
+                Log.d(TAG, "onReceive $intent $action")
+                when (action) {
+                    ACTION_PLAY -> speakControl.toggleSpeak()
+                    ACTION_PAUSE -> speakControl.pause()
+                    ACTION_FAST_FORWARD -> speakControl.forward()
+                    ACTION_REWIND -> speakControl.rewind()
+                    ACTION_PREVIOUS -> speakControl.rewind(SpeakSettings.RewindAmount.ONE_VERSE)
+                    ACTION_NEXT -> speakControl.forward(SpeakSettings.RewindAmount.ONE_VERSE)
+                    ACTION_STOP -> speakControl.stop()
+                    ACTION_UPDATE_NOTIFICATION -> {
+                        if(speakControl.isPaused) {
+                            instance!!.buildNotification(false)
+                        }
+                    }
+                }
+            }
+        }
+
+
     private var app: BibleApplication
     private var currentTitle: String
     private var notificationManager: NotificationManager
     private var headsetReceiver: BroadcastReceiver
-    private var notificationReceiver: BroadcastReceiver
+    @Inject lateinit var speakControl: SpeakControl
 
     private var currentText = ""
 
@@ -120,10 +148,13 @@ class TextToSpeechNotificationManager {
         return BibleApplication.getApplication().getString(id)
     }
 
-
+    private var mediaSession: MediaSessionCompat?
 
     init {
         Log.d(TAG, "Initialize")
+
+        // Not: this is singleton!
+        instance = this
         app = BibleApplication.getApplication()
         notificationManager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         currentTitle = getString(R.string.app_name)
@@ -144,64 +175,40 @@ class TextToSpeechNotificationManager {
         }
         app.registerReceiver(headsetReceiver, IntentFilter(Intent.ACTION_HEADSET_PLUG))
 
-        notificationReceiver = object: BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                Log.d(TAG, "onReceive $context $intent")
-                when (intent?.action) {
-                    ACTION_PLAY -> speakControl.continueAfterPause()
-                    ACTION_PAUSE -> speakControl.pause()
-                    ACTION_FAST_FORWARD -> speakControl.forward()
-                    ACTION_REWIND -> speakControl.rewind()
-                    ACTION_PREVIOUS -> speakControl.rewind(SpeakSettings.RewindAmount.ONE_VERSE)
-                    ACTION_NEXT -> speakControl.forward(SpeakSettings.RewindAmount.ONE_VERSE)
-                    ACTION_STOP -> speakControl.stop()
-                    UPDATE_NOTIFICATION -> {
-                        if(speakControl.isPaused) {
-                            buildNotification(false)
-                        }
-                    }
-                }
-            }
-        }
-
-        val filter = IntentFilter()
-        filter.addAction(ACTION_PLAY)
-        filter.addAction(ACTION_PAUSE)
-        filter.addAction(ACTION_REWIND)
-        filter.addAction(ACTION_FAST_FORWARD)
-        filter.addAction(ACTION_NEXT)
-        filter.addAction(ACTION_PREVIOUS)
-        filter.addAction(ACTION_STOP)
-        filter.addAction(UPDATE_NOTIFICATION)
-
-        app.registerReceiver(notificationReceiver, filter)
-
         ABEventBus.getDefault().register(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(SPEAK_NOTIFICATIONS_CHANNEL,
-                    getString(R.string.tts_status), NotificationManager.IMPORTANCE_LOW).apply {
+                    getString(R.string.notification_channel_tts_status), NotificationManager.IMPORTANCE_LOW).apply {
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             notificationManager.createNotificationChannel(channel)
         }
-        notificationManager.cancelAll()
+
+        // Needed only to provide colorized notification
+        mediaSession = try { MediaSessionCompat(app, "tts-session")} catch (e: NullPointerException) { null }
     }
 
     fun destroy() {
         app.unregisterReceiver(headsetReceiver)
-        app.unregisterReceiver(notificationReceiver)
         shutdown()
+        instance = null
     }
 
     private fun shutdown() {
         Log.d(TAG, "Shutdown")
         currentTitle = getString(R.string.app_name)
         currentText = ""
-        stopForeground()
+        // In case service was no longer foreground, we need do this here.
+        if(foreground) {
+            stopForeground(true)
+        }
+        else {
+            notificationManager.cancel(NOTIFICATION_ID)
+        }
     }
 
-    fun onEvent(ev: SpeakEvent) {
+    fun onEventMainThread(ev: SpeakEvent) {
         Log.d(TAG, "SpeakEvent $ev")
         if(!ev.isSpeaking && ev.isPaused) {
             Log.d(TAG, "Stop foreground (pause)")
@@ -214,11 +221,10 @@ class TextToSpeechNotificationManager {
         }
         else {
             shutdown()
-            notificationManager.cancel(NOTIFICATION_ID)
         }
     }
 
-    fun onEvent(ev: SpeakProgressEvent) {
+    fun onEventMainThread(ev: SpeakProgressEvent) {
         if(ev.speakCommand is TextCommand) {
             if(ev.speakCommand.type == TextCommand.TextType.TITLE) {
                 currentTitle = ev.speakCommand.text
@@ -233,8 +239,10 @@ class TextToSpeechNotificationManager {
         buildNotification(speakControl.isSpeaking)
     }
 
-    private fun generateAction(icon: Int, title: String, intentAction: String): NotificationCompat.Action {
-        val intent = Intent(intentAction)
+    private fun generateAction(icon: Int, title: String, command: String): NotificationCompat.Action {
+        val intent = Intent(app, NotificationReceiver::class.java).apply {
+            action = command
+         }
         val pendingIntent = PendingIntent.getBroadcast(app, 0, intent, 0)
         return NotificationCompat.Action.Builder(icon, title, pendingIntent).build()
     }
@@ -248,13 +256,22 @@ class TextToSpeechNotificationManager {
     private val bibleBitmap = BitmapFactory.decodeResource(app.resources, R.drawable.bible)
 
     private fun buildNotification(isSpeaking: Boolean) {
-        val deletePendingIntent = PendingIntent.getBroadcast(app, 0, Intent(ACTION_STOP), 0)
+        val deletePendingIntent = PendingIntent.getBroadcast(app, 0,
+                Intent(app, NotificationReceiver::class.java).apply {
+                    action = ACTION_STOP
+                }, 0)
 
         val contentIntent = Intent(app, MainBibleActivity::class.java)
         contentIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         val contentPendingIntent = PendingIntent.getActivity(app, 0, contentIntent, 0)
 
         val style = MediaStyle().setShowActionsInCompactView(2)
+
+        // mediaSession is null only in tests (Robolectric bug, see initialization).
+        val mediaSession = mediaSession
+        if(mediaSession != null) {
+            style.setMediaSession(mediaSession.sessionToken)
+        }
 
         val builder = NotificationCompat.Builder(app, SPEAK_NOTIFICATIONS_CHANNEL)
 
@@ -294,10 +311,11 @@ class TextToSpeechNotificationManager {
         }
     }
 
-    private fun stopForeground()
+    private fun stopForeground(removeNotification: Boolean = false)
     {
        val intent = Intent(app, ForegroundService::class.java)
-       intent.action = ForegroundService.STOP_FOREGROUND
+       intent.action = if(removeNotification) ForegroundService.STOP_FOREGROUND_REMOVE_NOTIFICATION
+                       else ForegroundService.STOP_FOREGROUND
        app.startService(intent)
     }
 }
