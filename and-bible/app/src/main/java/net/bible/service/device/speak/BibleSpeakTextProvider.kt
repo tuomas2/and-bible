@@ -399,13 +399,6 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
                 TextCommand("", type=TextCommand.TextType.NORMAL)))
     }
 
-    override fun autoRewind() {
-        if(lastVerseAutorewinded?.equals(startVerse) != true) {
-            rewind(settings.autoRewindAmount, true)
-            lastVerseAutorewinded = startVerse
-        }
-    }
-
     override fun forward(amount: SpeakSettings.RewindAmount?) {
         reset()
         val rewindAmount = amount?: SpeakSettings.RewindAmount.SMART
