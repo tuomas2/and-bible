@@ -2,21 +2,20 @@ package net.bible.android;
 
 import android.app.Application;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import android.content.res.Configuration;
 import android.content.res.Resources;
-import android.os.Build;
 import android.util.Log;
 
 import net.bible.android.control.ApplicationComponent;
 import net.bible.android.control.DaggerApplicationComponent;
+import net.bible.android.control.event.ABEventBus;
 import net.bible.android.view.util.locale.LocaleHelper;
 import net.bible.service.common.CommonUtils;
 import net.bible.service.device.ProgressNotificationManager;
 import net.bible.service.device.ScreenSettings;
-import net.bible.service.device.speak.TextToSpeechNotificationService;
+import net.bible.service.device.speak.TextToSpeechNotificationManager;
 import net.bible.service.sword.SwordEnvironmentInitialisation;
 
 import org.crosswire.common.util.Language;
@@ -26,8 +25,6 @@ import org.crosswire.jsword.bridge.BookIndexer;
 import java.util.List;
 import java.util.Locale;
 
-import static net.bible.service.device.speak.TextToSpeechNotificationService.ACTION_START_SERVICE;
-import static net.bible.service.device.speak.TextToSpeechNotificationService.ACTION_STOP_SERVICE;
 
 /** Main And Bible application singleton object
  * 
@@ -51,7 +48,8 @@ public class BibleApplication extends Application{
 	private static BibleApplication singleton;
 
 	private static final String TAG = "BibleApplication";
-	
+	private TextToSpeechNotificationManager ttsNotificationManager;
+
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -88,10 +86,7 @@ public class BibleApplication extends Application{
 
 		localeOverrideAtStartup = LocaleHelper.getOverrideLanguage(this);
 
-		// Start TTS notification service
-		Intent intent = new Intent(getApplicationContext(), TextToSpeechNotificationService.class);
-		intent.setAction(ACTION_START_SERVICE);
-		startService(intent);
+		ttsNotificationManager = new TextToSpeechNotificationManager();
 	}
 
 	public ApplicationComponent getApplicationComponent() {
@@ -211,17 +206,16 @@ public class BibleApplication extends Application{
 //			return true;
 //		}
 //	}
-	
+
+	/**
+	 * This is never called in real system (only in tests). See parent documentation.
+	 */
 	@Override
 	public void onTerminate() {
 		Log.i(TAG, "onTerminate");
-		// Stop TTS notification service
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-			Intent intent = new Intent(getApplicationContext(), TextToSpeechNotificationService.class);
-			intent.setAction(ACTION_STOP_SERVICE);
-			stopService(intent);
-		}
+		ttsNotificationManager.destroy();
 		super.onTerminate();
+		ABEventBus.getDefault().unregisterAll();
 	}
 	
 	// difficult to show dialogs during Activity onCreate so save it until later
@@ -236,8 +230,8 @@ public class BibleApplication extends Application{
 	public Resources getLocalizedResources(String language) {
 		BibleApplication app = getApplication();
 		Configuration oldConf = app.getResources().getConfiguration();
-        Configuration newConf = new Configuration(oldConf);
-        newConf.setLocale(new Locale(language));
-        return app.createConfigurationContext(newConf).getResources();
+		Configuration newConf = new Configuration(oldConf);
+		newConf.setLocale(new Locale(language));
+		return app.createConfigurationContext(newConf).getResources();
 	}
 }

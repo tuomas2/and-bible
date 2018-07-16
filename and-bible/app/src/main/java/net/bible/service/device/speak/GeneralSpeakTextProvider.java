@@ -4,6 +4,7 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 import net.bible.android.control.speak.SpeakSettings;
+import net.bible.android.control.speak.SpeakSettingsChangedEvent;
 import net.bible.service.common.AndRuntimeException;
 import net.bible.service.common.CommonUtils;
 
@@ -60,7 +61,7 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 	}
 
 	@Override
-	public void autoRewind() {
+	public void updateSettings(@NotNull SpeakSettingsChangedEvent speakSettingsChangedEvent) {
 
 	}
 
@@ -100,7 +101,6 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 			for (Key key : keyList) {
 				// intro
 				textToSpeak.add(key.getName()+". ");
-//				textToSpeak.add("\n");
 
 				// content
 				textToSpeak.add( swordContentFacade.getTextToSpeak(book, key));
@@ -462,9 +462,7 @@ public class GeneralSpeakTextProvider implements SpeakTextProvider {
 	}
 
 	@Override
-	public void prepareForContinue() {
-
-	}
+	public void prepareForStartSpeaking() {}
 
 //	private List<String> nonREbreakUpText(String text) {
 //		List<String> chunks = new ArrayList<String>();

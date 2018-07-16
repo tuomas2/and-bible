@@ -6,13 +6,14 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
-import de.greenrobot.event.EventBus
 import de.greenrobot.event.EventBusException
 import net.bible.android.BibleApplication
 import net.bible.android.control.bookmark.BookmarkControl
+import net.bible.android.control.event.ABEventBus
 import net.bible.android.control.event.passage.SynchronizeWindowsEvent
 import net.bible.android.control.speak.SpeakControl
 import net.bible.android.control.speak.SpeakSettings
@@ -28,11 +29,10 @@ import javax.inject.Inject
 
 
 abstract class AbstractSpeakWidget: AppWidgetProvider() {
-    @Inject
-    lateinit var speakControl: SpeakControl
+    @Inject lateinit var speakControl: SpeakControl
+    @Inject lateinit var bookmarkControl: BookmarkControl
     protected lateinit var currentTitle: String
-    @Inject
-    lateinit var bookmarkControl: BookmarkControl
+
     companion object {
         const val TAG = "SpeakWidget"
         val app = BibleApplication.getApplication()
@@ -48,7 +48,7 @@ abstract class AbstractSpeakWidget: AppWidgetProvider() {
                 .applicationComponent(BibleApplication.getApplication().applicationComponent)
                 .build().inject(this)
         try {
-            EventBus.getDefault().register(this)
+            ABEventBus.getDefault().register(this)
         } catch (e: EventBusException) {}
     }
 
@@ -149,6 +149,7 @@ abstract class AbstractButtonSpeakWidget: AbstractSpeakWidget() {
         }
         appWidgetManager.updateAppWidget(appWidgetId, views)
         updateSleepTimerButtonIcon(SpeakSettings.load())
+        updateWidgetSpeakButton(speakControl.isSpeaking)
     }
 
     private fun buttonId(b: String): Int? {
@@ -169,24 +170,25 @@ abstract class AbstractButtonSpeakWidget: AbstractSpeakWidget() {
         super.onReceive(context, intent)
         Log.d(TAG, "onReceive" + context + intent?.action)
         when(intent?.action) {
-            ACTION_SPEAK -> {
-                if(speakControl.isPaused) {
-                    speakControl.continueAfterPause()
-                }
-                else if (!speakControl.isSpeaking) {
-                    speakControl.speakBible() // TODO gen books
-                }
-                else {
-                    speakControl.pause()
-                }
-            }
+            ACTION_SPEAK -> speakControl.toggleSpeak()
             ACTION_REWIND -> speakControl.rewind()
             ACTION_FAST_FORWARD -> speakControl.forward()
             ACTION_NEXT -> speakControl.forward(SpeakSettings.RewindAmount.ONE_VERSE)
             ACTION_PREV -> speakControl.rewind(SpeakSettings.RewindAmount.ONE_VERSE)
-            ACTION_SLEEP_TIMER -> speakControl.toggleSleepTimer()
+            ACTION_SLEEP_TIMER -> toggleSleepTimer()
             ACTION_STOP -> speakControl.stop()
         }
+    }
+
+    private fun toggleSleepTimer() {
+        val settings = SpeakSettings.load();
+        if(settings.sleepTimer > 0) {
+            settings.sleepTimer = 0
+        }
+        else {
+            settings.sleepTimer = settings.lastSleepTimer
+        }
+        settings.save();
     }
 
     private fun updateSleepTimerButtonIcon(settings: SpeakSettings) {
@@ -209,12 +211,16 @@ abstract class AbstractButtonSpeakWidget: AbstractSpeakWidget() {
 }
 
 class SpeakBookmarkWidget: AbstractSpeakWidget() {
+    companion object {
+        const val ACTION_BOOKMARK = "action_bookmark"
+    }
     override fun onReceive(context: Context?, intent: Intent?) {
         initialize()
         super.onReceive(context, intent)
-        Log.d(TAG, "onReceive" + context + intent?.action)
-        if(intent?.action?.startsWith("ACTION_BOOKMARK_") == true) {
-            val osisRef = intent.action.substring(16..intent.action.length-1)
+        Log.d(TAG, "onReceive $context ${intent?.action}")
+        if(intent?.action == ACTION_BOOKMARK) {
+            val osisRef = intent.data.host
+            Log.d(TAG, "onReceive osisRef $osisRef")
             val dto = bookmarkControl.getBookmarkByOsisRef(osisRef)
             if(speakControl.isSpeaking || speakControl.isPaused) {
                 speakControl.stop()
@@ -241,21 +247,25 @@ class SpeakBookmarkWidget: AbstractSpeakWidget() {
             val button = RemoteViews(context.packageName, R.layout.speak_bookmarks_widget_button)
             button.setTextViewText(R.id.button, name)
 
-            val intent = Intent(context, javaClass)
-            intent.action = "ACTION_BOOKMARK_$osisRef"
+            val intent = Intent(context, javaClass).apply {
+                action = ACTION_BOOKMARK
+                data = Uri.parse("bible://$osisRef")
+            }
             val bc = PendingIntent.getBroadcast(context, 0, intent, 0)
             button.setOnClickPendingIntent(R.id.button, bc)
             views.addView(R.id.layout, button)
         }
 
         val settings = SpeakSettings.load()
-        val labelDto = LabelDto()
-        labelDto.id = settings.autoBookmarkLabelId
+        if(settings.autoBookmarkLabelId != null) {
+            val labelDto = LabelDto()
+            labelDto.id = settings.autoBookmarkLabelId
 
-        for(b in bookmarkControl.getBookmarksWithLabel(labelDto).sortedWith(
-                Comparator<BookmarkDto> { o1, o2 -> o1.verseRange.start.compareTo(o2.verseRange.start) })) {
-            addButton(b.verseRange.start.name, b.verseRange.start.osisRef)
-            Log.d(TAG, "Added button for $b")
+            for (b in bookmarkControl.getBookmarksWithLabel(labelDto).sortedWith(
+                    Comparator<BookmarkDto> { o1, o2 -> o1.verseRange.start.compareTo(o2.verseRange.start) })) {
+                addButton(b.verseRange.start.name, b.verseRange.start.osisRef)
+                Log.d(TAG, "Added button for $b")
+            }
         }
 
         val contentIntent = Intent(context, MainBibleActivity::class.java)

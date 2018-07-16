@@ -9,9 +9,8 @@ import net.bible.android.activity.R;
 import net.bible.android.control.ApplicationScope;
 import net.bible.android.control.bookmark.BookmarkControl;
 import net.bible.android.control.event.ABEventBus;
-import net.bible.android.control.event.apptobackground.AppToBackgroundEvent;
 import net.bible.android.control.event.phonecall.PhoneCallMonitor;
-import net.bible.android.control.event.phonecall.PhoneCallStarted;
+import net.bible.android.control.event.phonecall.PhoneCallEvent;
 import net.bible.android.control.page.window.WindowControl;
 import net.bible.android.control.speak.SpeakSettings;
 import net.bible.android.control.speak.SpeakSettingsChangedEvent;
@@ -63,15 +62,15 @@ public class TextToSpeechServiceManager {
 
     private TextToSpeech mTts;
 
-    private List<Locale> localePreferenceList;
-    private Locale currentLocale = Locale.getDefault();
+	private List<Locale> localePreferenceList;
+	private Locale currentLocale = Locale.getDefault();
 	private static String PERSIST_LOCALE_KEY = "SpeakLocale";
-    private static String PERSIST_BIBLE_PROVIDER = "SpeakBibleProvider";
+	private static String PERSIST_BIBLE_PROVIDER = "SpeakBibleProvider";
 	public static String EARCON_PRE_TITLE = "[pre-title]";
 	public static String EARCON_PRE_CHAPTER_CHANGE = "[pre-chapter-change]";
 	public static String EARCON_PRE_BOOK_CHANGE = "[pre-book-change]";
 
-    private SpeakTextProvider mSpeakTextProvider;
+	private SpeakTextProvider mSpeakTextProvider;
 
 	private GeneralSpeakTextProvider generalSpeakTextProvider;
 	private BibleSpeakTextProvider bibleSpeakTextProvider;
@@ -89,25 +88,22 @@ public class TextToSpeechServiceManager {
     private boolean isSpeaking = false;
     
     private boolean isPaused = false;
+    private boolean mockedTts = false;
 
 	@Inject
-    public TextToSpeechServiceManager(SwordContentFacade swordContentFacade, BibleTraverser bibleTraverser,
+	public TextToSpeechServiceManager(SwordContentFacade swordContentFacade, BibleTraverser bibleTraverser,
 									  WindowControl windowControl, BookmarkControl bookmarkControl) {
-    	Log.d(TAG, "Creating TextToSpeechServiceManager");
+		Log.d(TAG, "Creating TextToSpeechServiceManager");
 		generalSpeakTextProvider = new GeneralSpeakTextProvider(swordContentFacade);
 		SwordBook book = (SwordBook) windowControl.getActiveWindowPageManager().getCurrentBible().getCurrentDocument();
 		Verse verse = windowControl.getActiveWindowPageManager().getCurrentBible().getSingleKey();
 
 		bibleSpeakTextProvider = new BibleSpeakTextProvider(swordContentFacade, bibleTraverser, bookmarkControl, book, verse);
-    	mSpeakTextProvider = bibleSpeakTextProvider;
+		mSpeakTextProvider = bibleSpeakTextProvider;
 
-    	mSpeakTiming = new SpeakTiming();
+		mSpeakTiming = new SpeakTiming();
 		ABEventBus.getDefault().safelyRegister(this);
-    	restorePauseState();
-    }
-
-	public BibleSpeakTextProvider getBibleSpeakTextProvider() {
-		return bibleSpeakTextProvider;
+		restorePauseState();
 	}
 
     public boolean isLanguageAvailable(String langCode) {
@@ -119,7 +115,7 @@ public class TextToSpeechServiceManager {
 		clearTtsQueue();
 		bibleSpeakTextProvider.setupReading(book, verse);
 		localePreferenceList = calculateLocalePreferenceList(book);
-		startSpeakingInitingIfRequired();
+		initializeTtsOrStartSpeaking();
 	}
 
 	public synchronized void speakText(Book book, List<Key> keyList, boolean queue, boolean repeat) {
@@ -127,7 +123,7 @@ public class TextToSpeechServiceManager {
 		generalSpeakTextProvider.setupReading(book, keyList, repeat);
 		handleQueue(queue);
 		localePreferenceList = calculateLocalePreferenceList(book);
-		startSpeakingInitingIfRequired();
+		initializeTtsOrStartSpeaking();
     }
 
 	private void switchProvider(SpeakTextProvider newProvider) {
@@ -190,7 +186,19 @@ public class TextToSpeechServiceManager {
 		return null;
 	}
 
-	private void startSpeakingInitingIfRequired() {
+	public void setupMockedTts() {
+		// for tests
+		mockedTts = true;
+		onInitListener = new TextToSpeech.OnInitListener() {
+			public void onInit (int status){
+				mSpeakTextProvider.prepareForStartSpeaking();
+				startSpeaking();
+				stopIfPhoneCall();
+			}
+		};
+	}
+
+	private void initializeTtsOrStartSpeaking() {
 		if (mTts==null) {
         	Log.d(TAG, "mTts was null so initialising Tts");
 
@@ -210,11 +218,8 @@ public class TextToSpeechServiceManager {
     /**
      * Add event listener to stop on call
      */
-	protected void stopIfPhoneCall() {
-		
+	private void stopIfPhoneCall() {
 		PhoneCallMonitor.ensureMonitoringStarted();
-		
-		// listen for phone call in order to pause speak
 	}
     
     public synchronized void rewind(SpeakSettings.RewindAmount amount) {
@@ -238,7 +243,7 @@ public class TextToSpeechServiceManager {
 
         isPaused = wasPaused;
         if (!isPaused) {
-        	startSpeakingInitingIfRequired();
+        	continueAfterPause();
         }
     }
 
@@ -258,88 +263,91 @@ public class TextToSpeechServiceManager {
         	mSpeakTextProvider.savePosition(mSpeakTiming.getFractionCompleted());
         }
 
-        // move current position back a bit
         mSpeakTextProvider.forward(amount);
 
         isPaused = wasPaused;
         if (!isPaused) {
-        	startSpeakingInitingIfRequired();
+            continueAfterPause();
         }
     }
 
-    public synchronized void pause() {
-    	Log.d(TAG, "Pause TTS");
+	public synchronized void pause(boolean willContinueAfterThis) {
+		Log.d(TAG, "Pause TTS");
 		
-        if (isSpeaking()) {
-            isPaused = true;
-	        isSpeaking = false;
+		if (isSpeaking()) {
+			isPaused = true;
+			isSpeaking = false;
 
 			mSpeakTextProvider.savePosition(mSpeakTiming.getFractionCompleted());
-	        mSpeakTextProvider.pause();
-	        
-	        //kill the tts engine because it could be a long ime before restart and the engine may become corrupted or used elsewhere
-	        shutdownTtsEngine();
-	        
-	        fireStateChangeEvent();
-        }
-    }
+			mSpeakTextProvider.pause();
 
-    public synchronized void continueAfterPause(boolean automated) {
-    	try {
-	    	Log.d(TAG, "continue after pause");
-            isPaused = false;
-			clearPauseState();
-			if(!automated) {
-				mSpeakTextProvider.autoRewind();
+			if(willContinueAfterThis) {
+				clearTtsQueue();
+				mTts.stop();
 			}
-	        // ask TTs to say the text
-	    	startSpeakingInitingIfRequired();
-    	} catch (Exception e) {
-    		Log.e(TAG, "TTS Error continuing after Pause", e);
-    		mSpeakTextProvider.reset();
-    		isSpeaking = false;
-    		shutdown();
-    	}
-    	
-    	// should be able to clear this because we are now speaking
-    	isPaused = false;
-    }
+			else {
+				//kill the tts engine because it could be a long ime before restart and the engine may
+				// become corrupted or used elsewhere
+				shutdownTtsEngine();
+			}
+
+			fireStateChangeEvent();
+		}
+	}
+
+	public synchronized void continueAfterPause() {
+		try {
+			Log.d(TAG, "continue after pause");
+			isPaused = false;
+			clearPauseState();
+			// ask TTs to say the text
+			initializeTtsOrStartSpeaking();
+		} catch (Exception e) {
+			Log.e(TAG, "TTS Error continuing after Pause", e);
+			mSpeakTextProvider.reset();
+			isSpeaking = false;
+			shutdown();
+		}
+
+		// should be able to clear this because we are now speaking
+		isPaused = false;
+	}
 
     /** only check timing when paused to prevent concurrency problems
      */
-    public long getPausedTotalSeconds() {
-    	return mSpeakTiming.getSecsForChars(mSpeakTextProvider.getTotalChars());
-    }
-    public long getPausedCompletedSeconds() {
-    	return mSpeakTiming.getSecsForChars(mSpeakTextProvider.getSpokenChars());
-    }
+	public long getPausedTotalSeconds() {
+		return mSpeakTiming.getSecsForChars(mSpeakTextProvider.getTotalChars());
+	}
 
-    private void startSpeaking() {
-    	Log.d(TAG, "about to send all text to TTS");
-        // ask TTs to say the text
-    	if (!isSpeaking) {
-    		mSpeakTextProvider.prepareForContinue();
-    		speakNextChunk();
-    		isSpeaking = true;
-    		isPaused = false;
-    		fireStateChangeEvent();
-    	}
-    	
-    	// should be able to clear this because we are now speaking
-    	isPaused = false;
-    }
+	public long getPausedCompletedSeconds() {
+		return mSpeakTiming.getSecsForChars(mSpeakTextProvider.getSpokenChars());
+	}
+
+	private void startSpeaking() {
+		Log.d(TAG, "about to send some text to TTS");
+		if (!isSpeaking) {
+			speakNextChunk();
+			isSpeaking = true;
+			isPaused = false;
+			fireStateChangeEvent();
+		}
+		else {
+			isPaused = false;
+		}
+	}
 
 	private void speakNextChunk() {
-    	String utteranceId = "";
+		String utteranceId = "";
 		Log.d(TAG, "Adding items to TTS queue. first utterance id: " + uniqueUtteranceNo);
-    	for(int i=0; i<mSpeakTextProvider.getNumItemsToTts(); i++) {
+		for(int i=0; i<mSpeakTextProvider.getNumItemsToTts(); i++) {
 			utteranceId = UTTERANCE_PREFIX + uniqueUtteranceNo++;
 			SpeakCommand cmd = mSpeakTextProvider.getNextSpeakCommand(utteranceId, i==0);
-			cmd.speak(mTts, utteranceId);
+			if(!mockedTts) {
+				cmd.speak(mTts, utteranceId);
+			}
 		}
 		Log.d(TAG, "Added items to TTS queue. Last utterance id: " + utteranceId);
 	}
-
 
 
     /** flush cached text
@@ -413,33 +421,30 @@ public class TextToSpeechServiceManager {
 		return isPaused;
 	}
 
+	private boolean wasPaused = false;
 	/**
 	 * Pause speak if phone call starts
 	 */
-	public void onEvent(PhoneCallStarted event) {
-		if (isSpeaking()) {
-			pause();
-		}
-
-		if (isPaused()) {
-			persistPauseState();
-		} else {
-			// ensure a previous pause does not hang around and be restored incorrectly
-			clearPauseState();
-		}
-		
-		shutdownTtsEngine();
-	}
-
-	public void onEvent(AppToBackgroundEvent event) {
-		if (isPaused()) {
-			persistPauseState();
+	public void onEvent(PhoneCallEvent event) {
+		if(event.getCallActivating()) {
+			if (isSpeaking()) {
+				wasPaused = true;
+				pause(false);
+			}
+			if (isPaused()) {
+				persistPauseState();
+			} else {
+				// ensure a previous pause does not hang around and be restored incorrectly
+				clearPauseState();
+			}
 		}
 		else {
-			clearPauseState();
+			if(isPaused && wasPaused) {
+				wasPaused = false;
+				continueAfterPause();
+			}
 		}
 	}
-
 	/** persist and restore pause state to allow pauses to continue over an app exit
 	 */
 	private void persistPauseState() {
@@ -492,7 +497,7 @@ public class TextToSpeechServiceManager {
 				mTts.addEarcon(EARCON_PRE_BOOK_CHANGE, BibleApplication.getApplication().getPackageName(), R.raw.long_pling);
 
 				// set speech rate
-                setRate(SpeakSettings.Companion.load().getPlaybackSettings().getSpeed());
+				setRate(SpeakSettings.Companion.load().getPlaybackSettings().getSpeed());
 
 				boolean localeOK = false;
 				Locale locale = null;
@@ -519,18 +524,14 @@ public class TextToSpeechServiceManager {
 					if (ok == TextToSpeech.ERROR) {
 						Log.e(TAG, "Error registering utteranceProgressListener");
 					} else {
-						// everything seems to have succeeded if we get here
 						isOk = true;
-						// say the text
+						mSpeakTextProvider.prepareForStartSpeaking();
 						startSpeaking();
-
-						// add event listener to stop on call
 						stopIfPhoneCall();
 					}
 				}
 			} else {
 				Log.d(TAG, "Tts initialisation failed");
-				// Initialization failed.
 				showError(R.string.error_occurred, new Exception("Tts Initialisation failed"));
 			}
 
@@ -578,17 +579,19 @@ public class TextToSpeechServiceManager {
 		}
 	};
 
-    private void setRate(int speechRate) {
+	private void setRate(int speechRate) {
 		if(mTts != null) {
 			mTts.setSpeechRate(speechRate/100F);
 		}
     }
 
-    void onEvent(SpeakSettingsChangedEvent ev) {
-		setRate(ev.getSpeakSettings().getPlaybackSettings().getSpeed());
+	public CharSequence getStatusText() {
+		return mSpeakTextProvider.getStatusText();
 	}
 
-    public CharSequence getStatusText() {
-    	return mSpeakTextProvider.getStatusText();
-    }
+	public void updateSettings(SpeakSettingsChangedEvent ev) {
+		mSpeakTextProvider.updateSettings(ev);
+		setRate(ev.getSpeakSettings().getPlaybackSettings().getSpeed());
+
+	}
 }

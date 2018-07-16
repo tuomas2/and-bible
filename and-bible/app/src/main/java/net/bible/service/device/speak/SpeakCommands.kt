@@ -17,6 +17,11 @@ class TextCommand(text: String, val type: TextType = TextType.NORMAL) : SpeakCom
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
         }
+        else {
+            val params = HashMap<String, String>()
+            params.set(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            tts.speak(text, TextToSpeech.QUEUE_ADD, params);
+        }
     }
 
     override fun toString(): String {
@@ -40,7 +45,7 @@ abstract class EarconCommand(val earcon: String, val enabled: Boolean): SpeakCom
     }
 }
 
-class PreBookChangeCommand(speakSettings: SpeakSettings): EarconCommand(TextToSpeechServiceManager.EARCON_PRE_BOOK_CHANGE, speakSettings.playbackSettings.playEarconBook)
+class PreBookChangeCommand: EarconCommand(TextToSpeechServiceManager.EARCON_PRE_BOOK_CHANGE, true)
 class PreChapterChangeCommand(speakSettings: SpeakSettings): EarconCommand(TextToSpeechServiceManager.EARCON_PRE_CHAPTER_CHANGE, speakSettings.playbackSettings.playEarconChapter)
 class PreTitleCommand(speakSettings: SpeakSettings): EarconCommand(TextToSpeechServiceManager.EARCON_PRE_TITLE, speakSettings.playbackSettings.playEarconTitles)
 
@@ -52,7 +57,7 @@ open class SilenceCommand(val enabled: Boolean=true) : SpeakCommand {
     }
 }
 
-class ParagraphChangeCommand(speakSettings: SpeakSettings) : SilenceCommand(true)
+class ParagraphChangeCommand : SilenceCommand(true)
 
 class SpeakCommandArray: ArrayList<SpeakCommand>() {
     private val maxLength = TextToSpeech.getMaxSpeechInputLength()
@@ -106,7 +111,6 @@ class SpeakCommandArray: ArrayList<SpeakCommand>() {
         if(element is TextCommand) {
             if(element.text.isEmpty())
                 return false
-
             if(lastCommand is TextCommand) {
                 val newText = "${lastCommand.text} ${element.text}"
                 if (newText.length > maxLength)
@@ -117,12 +121,7 @@ class SpeakCommandArray: ArrayList<SpeakCommand>() {
                 }
             }
             else {
-                if(!element.text.isEmpty()) {
-                    return super.add(element)
-                }
-                else {
-                    return false;
-                }
+                return super.add(element)
             }
         }
         else if(element is SilenceCommand && lastCommand is SilenceCommand) {

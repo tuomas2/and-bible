@@ -1,8 +1,8 @@
 package net.bible.android.control.speak
 import android.util.Log
-import de.greenrobot.event.EventBus
 import kotlinx.serialization.*
 import kotlinx.serialization.json.JSON
+import net.bible.android.control.event.ABEventBus
 import net.bible.service.common.CommonUtils
 import java.lang.IllegalArgumentException
 
@@ -12,10 +12,8 @@ const val TAG = "SpeakSettings"
 
 @Serializable
 data class PlaybackSettings (
-                         @Optional val speakBookChanges: Boolean = true,
                          @Optional val speakChapterChanges: Boolean = true,
                          @Optional val speakTitles: Boolean = true,
-                         @Optional val playEarconBook: Boolean = true,
                          @Optional val playEarconChapter: Boolean = false,
                          @Optional val playEarconTitles: Boolean = true,
                          @Optional var speed: Int = 100
@@ -43,11 +41,14 @@ data class SpeakSettingsChangedEvent(val speakSettings: SpeakSettings, val updat
 data class SpeakSettings(@Optional val synchronize: Boolean = true,
                          @Optional val autoBookmarkLabelId: Long? = null,
                          @Optional val replaceDivineName: Boolean = false,
-                         @Optional val autoRewindAmount: RewindAmount = RewindAmount.NONE,
                          @Optional val restoreSettingsFromBookmarks: Boolean = false,
                          @Optional var playbackSettings: PlaybackSettings = PlaybackSettings(),
                          @Optional var sleepTimer: Int = 0,
-                         @Optional var lastSleepTimer: Int = 10
+                         @Optional var lastSleepTimer: Int = 10,
+                         // General book speak settings
+                         @Optional var queue: Boolean = true,
+                         @Optional var repeat: Boolean = false,
+                         @Optional var numPagesToSpeakId: Int = 0
                          ) {
     enum class RewindAmount {NONE, ONE_VERSE, TEN_VERSES, SMART}
 
@@ -67,7 +68,7 @@ data class SpeakSettings(@Optional val synchronize: Boolean = true,
             Log.d(TAG, "SpeakSettings saved! $this")
             val oldSettings = currentSettings
             currentSettings = this.makeCopy()
-            EventBus.getDefault().post(SpeakSettingsChangedEvent(this,
+            ABEventBus.getDefault().post(SpeakSettingsChangedEvent(this,
                     updateBookmark && oldSettings?.playbackSettings?.equals(this.playbackSettings) != true,
                      oldSettings?.sleepTimer != this.sleepTimer))
         }

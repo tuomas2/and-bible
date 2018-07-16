@@ -6,10 +6,10 @@ import android.util.Log
 import android.view.View
 import android.widget.*
 import android.widget.AdapterView.INVALID_POSITION
-import de.greenrobot.event.EventBus
 import kotlinx.android.synthetic.main.speak_bible.*
 import net.bible.android.activity.R
 import net.bible.android.control.bookmark.BookmarkControl
+import net.bible.android.control.event.ABEventBus
 import net.bible.android.control.speak.*
 import net.bible.android.view.activity.ActivityScope
 import net.bible.android.view.activity.base.Dialogs
@@ -32,7 +32,7 @@ class BibleSpeakActivity : AbstractSpeakActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.speak_bible)
         super.buildActivityComponent().inject(this)
-        EventBus.getDefault().register(this)
+        ABEventBus.getDefault().register(this)
 
         bookmarkLabels = bookmarkControl.assignableLabels
 
@@ -49,7 +49,9 @@ class BibleSpeakActivity : AbstractSpeakActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 speedStatus.text = "$progress %"
-                updateSettings()
+                if(fromUser) {
+                    updateSettings()
+                }
             }
         })
 
@@ -58,7 +60,9 @@ class BibleSpeakActivity : AbstractSpeakActivity() {
 
         bookmarkTag.onItemSelectedListener = object: AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                updateSettings()
+                if(view != null) {
+                    updateSettings()
+                }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {
@@ -68,33 +72,29 @@ class BibleSpeakActivity : AbstractSpeakActivity() {
         resetView(SpeakSettings.load())
     }
 
+    override fun onDestroy() {
+        ABEventBus.getDefault().unregister(this)
+        super.onDestroy()
+    }
+
     override fun resetView(settings: SpeakSettings) {
         statusText.text = speakControl.getStatusText()
         synchronize.isChecked = settings.synchronize
-        speakBookChanges.isChecked = settings.playbackSettings.speakBookChanges
         speakChapterChanges.isChecked = settings.playbackSettings.speakChapterChanges
         speakTitles.isChecked = settings.playbackSettings.speakTitles
 
-        playEarconBook.isChecked = settings.playbackSettings.playEarconBook
         playEarconChapter.isChecked = settings.playbackSettings.playEarconChapter
         playEarconTitles.isChecked = settings.playbackSettings.playEarconTitles
 
         replaceDivineName.isChecked = settings.replaceDivineName
         restoreSettingsFromBookmarks.isChecked = settings.restoreSettingsFromBookmarks
 
-        when(settings.autoRewindAmount) {
-            SpeakSettings.RewindAmount.NONE -> autoRewindNone.isChecked = true
-            SpeakSettings.RewindAmount.ONE_VERSE -> autoRewindOneVerse.isChecked = true
-            SpeakSettings.RewindAmount.TEN_VERSES -> autoRewindTenVerses.isChecked = true
-            SpeakSettings.RewindAmount.SMART -> autoRewindSmart.isChecked = true
-        }
-
         if(settings.autoBookmarkLabelId != null) {
             val labelDto = bookmarkLabels.find { labelDto -> labelDto.id == settings.autoBookmarkLabelId }
             val itemId = bookmarkLabels.indexOf(labelDto)
 
-            bookmarkTag.setSelection(itemId)
             autoBookmark.isChecked = true
+            bookmarkTag.setSelection(itemId)
         }
         else {
             autoBookmark.isChecked = false
@@ -119,7 +119,7 @@ class BibleSpeakActivity : AbstractSpeakActivity() {
 
     fun onSettingsChange(widget: View) = updateSettings()
 
-    private fun updateSettings() {
+    fun updateSettings() {
         bookmarkTag.isEnabled = autoBookmark.isChecked
 
         val labelId = if (bookmarkTag.selectedItemPosition != INVALID_POSITION) {
@@ -129,24 +129,14 @@ class BibleSpeakActivity : AbstractSpeakActivity() {
         val settings = SpeakSettings(
                 synchronize = synchronize.isChecked,
                 playbackSettings = PlaybackSettings(
-                        speakBookChanges = speakBookChanges.isChecked,
                         speakChapterChanges = speakChapterChanges.isChecked,
                         speakTitles = speakTitles.isChecked,
-                        playEarconBook = playEarconBook.isChecked,
                         playEarconChapter = playEarconChapter.isChecked,
                         playEarconTitles = playEarconTitles.isChecked,
                         speed = speakSpeed.progress
                         ),
                 autoBookmarkLabelId = if (autoBookmark.isChecked) labelId else null,
                 replaceDivineName = replaceDivineName.isChecked,
-                autoRewindAmount =  if ( autoRewindOneVerse.isChecked ) {
-                    SpeakSettings.RewindAmount.ONE_VERSE }
-                else if (autoRewindNone.isChecked ) {
-                    SpeakSettings.RewindAmount.NONE }
-                else if (autoRewindTenVerses.isChecked ) {
-                    SpeakSettings.RewindAmount.TEN_VERSES }
-                else {
-                    SpeakSettings.RewindAmount.SMART},
                 restoreSettingsFromBookmarks = restoreSettingsFromBookmarks.isChecked,
                 sleepTimer = currentSettings.sleepTimer,
                 lastSleepTimer = currentSettings.lastSleepTimer
