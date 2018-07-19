@@ -27,10 +27,7 @@ import org.crosswire.jsword.passage.KeyUtil;
 import org.crosswire.jsword.passage.Verse;
 import org.crosswire.jsword.versification.Versification;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 
 import javax.inject.Inject;
 
@@ -369,9 +366,8 @@ public class SpeakControl {
 		}
 	}
 
-	@Nullable
-	public CharSequence getStatusText() {
-		return textToSpeechServiceManager.get().getStatusText();
+	public String getStatusText(int showFlag) {
+		return textToSpeechServiceManager.get().getStatusText(showFlag);
 	}
 
 	private void enableSleepTimer(int sleepTimerAmount) {
@@ -384,6 +380,9 @@ public class SpeakControl {
 				@Override
 				public void run() {
 					pause(false, false);
+					SpeakSettings s = SpeakSettings.Companion.load();
+					s.setSleepTimer(0);
+					s.save();
 				}
 			};
 			sleepTimer.schedule(timerTask, sleepTimerAmount * 60000);
@@ -397,6 +396,15 @@ public class SpeakControl {
 			timerTask.cancel();
 		}
 		timerTask = null;
+	}
+
+	public Date getSleepTimerActivationTime() {
+		if(timerTask == null) {
+			return null;
+		}
+		else {
+			return new Date(timerTask.scheduledExecutionTime());
+		}
 	}
 
 	public boolean sleepTimerActive() {

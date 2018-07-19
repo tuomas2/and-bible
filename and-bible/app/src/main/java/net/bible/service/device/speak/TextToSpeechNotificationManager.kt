@@ -19,8 +19,11 @@ import net.bible.android.control.speak.SpeakSettings
 import net.bible.android.view.activity.ActivityScope
 import net.bible.android.view.activity.DaggerActivityComponent
 import net.bible.android.view.activity.page.MainBibleActivity
+import net.bible.service.device.speak.BibleSpeakTextProvider.Companion.FLAG_SHOW_ALL
 import net.bible.service.device.speak.event.SpeakEvent
 import net.bible.service.device.speak.event.SpeakProgressEvent
+import java.text.SimpleDateFormat
+import java.util.*
 import javax.inject.Inject
 
 @ActivityScope
@@ -274,9 +277,8 @@ class TextToSpeechNotificationManager {
         builder.setSmallIcon(R.drawable.ichthys_alpha)
                 .setLargeIcon(bibleBitmap)
                 .setContentTitle(currentTitle)
-                .setSubText(speakControl.statusText)
+                .setSubText(speakControl.getStatusText(FLAG_SHOW_ALL))
                 .setShowWhen(false)
-                .setContentText(currentText)
                 .setDeleteIntent(deletePendingIntent)
                 .setContentIntent(contentPendingIntent)
                 .setStyle(style)
@@ -286,6 +288,16 @@ class TextToSpeechNotificationManager {
                 .addAction(nextAction)
                 .addAction(forwardAction)
                 .setOnlyAlertOnce(true)
+
+        val sleepTime = speakControl.sleepTimerActivationTime
+        if(sleepTime!=null) {
+            val minutes = (sleepTime.time - Calendar.getInstance().timeInMillis) / 60000
+            builder.setContentText(app.getString(R.string.sleep_timer_active_at, minutes.toString()))
+        }
+        else {
+            builder.setContentText(currentText)
+        }
+
 
         val notification = builder.build()
         Log.d(TAG, "Updating notification, isSpeaking: $isSpeaking")
