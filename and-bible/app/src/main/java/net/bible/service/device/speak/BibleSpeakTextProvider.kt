@@ -268,13 +268,14 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         if(settings.autoBookmarkLabelId != null) {
             val verse = currentVerse
 
-            val bookmarkDto = bookmarkControl.getBookmarkByKey(verse)
+            val bookmarkDto = bookmarkControl.getBookmarkByKey(verse)?: return
             val labelList = bookmarkControl.getBookmarkLabels(bookmarkDto)
             val ttsLabel = labelList.find { it.id == settings.autoBookmarkLabelId }
 
             if(ttsLabel != null) {
-                if(bookmarkDto.playbackSettings != null && settings.restoreSettingsFromBookmarks) {
-                    settings.playbackSettings = bookmarkDto.playbackSettings
+                val playbackSettings = bookmarkDto.playbackSettings
+                if(playbackSettings != null && settings.restoreSettingsFromBookmarks) {
+                    settings.playbackSettings = playbackSettings
                     settings.save()
                     Log.d("SpeakBookmark", "Loaded bookmark from $bookmarkDto ${settings.playbackSettings.speed}")
                 }
@@ -309,19 +310,18 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         val labelList = ArrayList<LabelDto>()
         if(settings.autoBookmarkLabelId != null) {
             var bookmarkDto = bookmarkControl.getBookmarkByKey(startVerse)
+            val playbackSettings = settings.playbackSettings.copy()
+            playbackSettings.bookAbbreviation = book.abbreviation
+
             if(bookmarkDto == null) {
                 bookmarkDto = BookmarkDto()
                 bookmarkDto.verseRange = VerseRange(startVerse.versification, startVerse)
-                if(settings.restoreSettingsFromBookmarks) {
-                    bookmarkDto.playbackSettings = settings.playbackSettings
-                }
+                bookmarkDto.playbackSettings = playbackSettings
                 bookmarkDto = bookmarkControl.addOrUpdateBookmark(bookmarkDto)
             }
             else {
                 labelList.addAll(bookmarkControl.getBookmarkLabels(bookmarkDto))
-                if(settings.restoreSettingsFromBookmarks) {
-                    bookmarkDto.playbackSettings = settings.playbackSettings
-                }
+                bookmarkDto.playbackSettings = playbackSettings
                 bookmarkDto = bookmarkControl.addOrUpdateBookmark(bookmarkDto)
             }
             if(settings.autoBookmarkLabelId != INVALID_LABEL_ID) {
@@ -468,7 +468,7 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         }
         if(sharedPreferences.contains(PERSIST_VERSE)) {
             val verseStr = sharedPreferences.getString(PERSIST_VERSE, "")
-            startVerse = osisIdToVerse(verseStr)
+            startVerse = osisIdToVerse(verseStr)?: return false
             endVerse = startVerse
             currentVerse = startVerse
             return true
@@ -476,9 +476,9 @@ class BibleSpeakTextProvider(private val swordContentFacade: SwordContentFacade,
         return false
     }
 
-    private fun osisIdToVerse(osisId: String): Verse {
-        val verse = book.getKey(osisId) as RangedPassage
-        return verse.getVerseAt(0)
+    private fun osisIdToVerse(osisId: String): Verse? {
+        val verse = book.getKey(osisId) as RangedPassage?
+        return verse?.getVerseAt(0)
     }
 
     override fun clearPersistedState() {

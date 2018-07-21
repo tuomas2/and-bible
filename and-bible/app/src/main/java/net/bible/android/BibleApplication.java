@@ -81,7 +81,7 @@ public class BibleApplication extends Application{
 		upgradePersistentData();
 		
 		// initialise link to Android progress control display in Notification bar
-		ProgressNotificationManager.getInstance().initialise();
+		ProgressNotificationManager.Companion.getInstance().initialise();
 
 		// various initialisations required every time at app startup
 		getApplicationComponent().warmUp().warmUpSwordEventually();

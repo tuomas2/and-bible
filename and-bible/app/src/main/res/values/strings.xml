@@ -276,23 +276,12 @@ TODO: error and download_document_confirm_prefix need to be parameterized rather
     <string name="conf_speak">Speak</string>
     <string name="conf_play_earcons">Play earcon sounds for</string>
     <string name="conf_replace_divinename">Replace divine name with Yahweh</string>
-    <string name="conf_delay_on_paragraph_changes">Add delay on paragraph changes</string>
 
-    <string name="conf_change_book">Book changes</string>
     <string name="conf_change_chapter">Chapter changes</string>
     <string name="conf_change_title">Titles</string>
 
-    <string name="tts_status">Text to speech status</string>
-
-    <string name="conf_rewind_amount">Rewind/Forward amount</string>
-
-    <string name="conf_rewind_amount_none">None</string>
-    <string name="conf_rewind_amount_one_verse">One verse</string>
-    <string name="conf_rewind_amount_ten_verses">Ten verses</string>
-    <string name="conf_rewind_amount_smart">Smart (*)</string>
-    <string name="conf_rewind_amount_smart_explanation">(*) Last spoken title if available or 1 chapter</string>
-
-    <string name="conf_auto_rewind">Auto rewind when resuming</string>
+    <string name="notification_channel_tts_status">Text to speech</string>
+    <string name="notification_channel_document_download_status">Document download</string>
 
     <string name="conf_sleep_timer">Set sleep timer</string>
     <string name="sleep_timer_title">Sleep time in minutes</string>
@@ -308,17 +297,18 @@ TODO: error and download_document_confirm_prefix need to be parameterized rather
     <string name="widget_toggle_sleep_timer">Toggle sleep timer</string>
     <string name="bookmarkwidget_helptext">Speak bookmarks shortcut buttons will appear here</string>
     <string name="sleep_timer_active_at">Sleep timer: %s minutes left.</string>
+    <string name="speak_status_stopped">- stopped - </string>
 
     <string-array name="divinename_original">
         <item>Lord</item>
-        <item/>
+        <item>God</item>
         <item/>
         <item/>
         <item/>
     </string-array>
     <string-array name="divinename_replace">
         <item>Yahweh</item>
-        <item/>
+        <item>Yahweh</item>
         <item/>
         <item/>
         <item/>
@@ -386,4 +376,5 @@ TODO: error and download_document_confirm_prefix need to be parameterized rather
     <string name="error_key_not_in_document">Not found in document</string>
     <string name="empty_list">No items to display</string>
     <string name="add_widget">Add widget</string>
+    <string name="download_documents">Downloading documents</string>
 </resources>

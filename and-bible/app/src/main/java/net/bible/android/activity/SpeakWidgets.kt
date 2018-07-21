@@ -22,16 +22,26 @@ import net.bible.android.view.activity.page.MainBibleActivity
 import net.bible.service.db.bookmark.BookmarkDto
 import net.bible.service.db.bookmark.LabelDto
 import net.bible.service.device.speak.BibleSpeakTextProvider.Companion.FLAG_SHOW_ALL
+import net.bible.service.device.speak.BibleSpeakTextProvider.Companion.FLAG_SHOW_PERCENT
 import net.bible.service.device.speak.TextCommand
 import net.bible.service.device.speak.event.SpeakEvent
 import net.bible.service.device.speak.event.SpeakProgressEvent
+import org.crosswire.jsword.book.Books
+import org.crosswire.jsword.book.sword.SwordBook
 import javax.inject.Inject
 
+private data class WidgetOptions(val statusFlags: Int = FLAG_SHOW_ALL, val showTitle: Boolean = true, val showText: Boolean = false)
 
 class SpeakWidgetManager {
     companion object {
         var instance: SpeakWidgetManager? = null
         const val TAG = "SpeakWidget"
+
+        private val widgetOptions = mapOf(
+                SpeakWidget1::class to WidgetOptions(0, false),
+                SpeakWidget2::class to WidgetOptions(FLAG_SHOW_PERCENT, true),
+                SpeakWidget3::class to WidgetOptions(FLAG_SHOW_ALL, true),
+                SpeakWidget4::class to WidgetOptions(0, true, true))
     }
 
     @Inject lateinit var speakControl: SpeakControl
@@ -40,8 +50,7 @@ class SpeakWidgetManager {
     private val app = BibleApplication.getApplication()
     private val resetTitle = app.getString(R.string.app_name)
     private var currentTitle = resetTitle
-    private var currentStatus = ""
-    private var currentSmallStatus = resetTitle
+    private var currentText = ""
 
     init {
         if(instance != null) {
@@ -66,9 +75,10 @@ class SpeakWidgetManager {
                 if (currentTitle.isEmpty()) {
                     currentTitle = resetTitle
                 }
+            } else {
+                currentText = ev.speakCommand.text
             }
-            currentStatus = speakControl.getStatusText(FLAG_SHOW_ALL)
-            currentSmallStatus = speakControl.getStatusText(0)
+
             updateWidgetTexts()
         }
     }
@@ -78,8 +88,7 @@ class SpeakWidgetManager {
             currentTitle = resetTitle
         } else if (!ev.isSpeaking && !ev.isPaused) {
             currentTitle = resetTitle
-            currentStatus = ""
-            currentSmallStatus = resetTitle
+            currentText = ""
         }
         updateWidgetTexts()
         updateWidgetSpeakButton(ev.isSpeaking)
@@ -100,11 +109,20 @@ class SpeakWidgetManager {
     private fun updateWidgetTexts() {
         Log.d(TAG, "updateWidgetTexts")
         val views = RemoteViews(app.packageName, R.layout.speak_widget)
-        Log.d(TAG, "updating status with $currentStatus")
-        views.setTextViewText(R.id.statusText, currentStatus)
-        views.setTextViewText(R.id.smallStatusText, currentSmallStatus)
+        Log.d(TAG, "updating status")
         views.setTextViewText(R.id.titleText, currentTitle)
-        partialUpdateWidgets(views)
+
+        val manager = AppWidgetManager.getInstance(app.applicationContext)
+        for((cls, wOptions) in widgetOptions) {
+            var statusText = speakControl.getStatusText(wOptions.statusFlags)
+            if(wOptions.showText) {
+                statusText += ": $currentText"
+            }
+            views.setTextViewText(R.id.statusText, statusText)
+            for (id in manager.getAppWidgetIds(ComponentName(app, cls.java))) {
+                manager.partiallyUpdateAppWidget(id, views)
+            }
+        }
     }
 
     private fun updateSleepTimerButtonIcon(settings: SpeakSettings) {
@@ -115,12 +133,10 @@ class SpeakWidgetManager {
         partialUpdateWidgets(views)
     }
 
-    private val speakWidgetClasses = arrayOf(SpeakWidget1::class.java, SpeakWidget2::class.java, SpeakWidget3::class.java)
-
     private fun partialUpdateWidgets(views: RemoteViews) {
         val manager = AppWidgetManager.getInstance(app.applicationContext)
-        for(cls in speakWidgetClasses) {
-            for (id in manager.getAppWidgetIds(ComponentName(app, cls))) {
+        for((cls, widgetOptions) in widgetOptions) {
+            for (id in manager.getAppWidgetIds(ComponentName(app, cls.java))) {
                 manager.partiallyUpdateAppWidget(id, views)
             }
         }
@@ -129,14 +145,14 @@ class SpeakWidgetManager {
     fun onEvent(ev: SynchronizeWindowsEvent) {
         val manager = AppWidgetManager.getInstance(app)
         for (i in manager.getAppWidgetIds(ComponentName(app, SpeakBookmarkWidget::class.java))) {
-            setupBookmarkWidget(app, manager, i)
+            updateBookmarkWidget(app, manager, i)
         }
     }
 
     private var bookmarksAdded = false
 
-    fun setupBookmarkWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
-        Log.d(TAG, "setupBookmarkWidget")
+    fun updateBookmarkWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
+        Log.d(TAG, "updateBookmarkWidget")
         val views = RemoteViews(context.packageName, R.layout.speak_bookmarks_widget)
 
         views.removeAllViews(R.id.layout)
@@ -162,7 +178,7 @@ class SpeakWidgetManager {
 
             for (b in bookmarkControl.getBookmarksWithLabel(labelDto).sortedWith(
                     Comparator<BookmarkDto> { o1, o2 -> o1.verseRange.start.compareTo(o2.verseRange.start) })) {
-                addButton(b.verseRange.start.name, b.verseRange.start.osisRef)
+                addButton("${b.verseRange.start.name} (${b.playbackSettings?.bookAbbreviation?:"?"})", b.verseRange.start.osisRef)
                 Log.d(TAG, "Added button for $b")
             }
         }
@@ -194,11 +210,18 @@ class SpeakWidgetManager {
         protected abstract fun setupWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int)
     }
 
-
     abstract class AbstractButtonSpeakWidget : AbstractSpeakWidget() {
+        companion object {
+            const val ACTION_SPEAK = "action_speak"
+            const val ACTION_REWIND = "action_rewind"
+            const val ACTION_FAST_FORWARD = "action_fast_forward"
+            const val ACTION_STOP = "action_stop"
+            const val ACTION_NEXT = "action_next"
+            const val ACTION_PREV = "action_prev"
+            const val ACTION_SLEEP_TIMER = "action_sleep_timer"
+        }
+
         protected abstract val buttons: List<String>
-        open val smallStatus = false
-        open val showTitle = true
         private val allButtons: List<String> = listOf(ACTION_FAST_FORWARD, ACTION_NEXT, ACTION_PREV, ACTION_REWIND,
                 ACTION_SPEAK, ACTION_STOP, ACTION_SLEEP_TIMER)
 
@@ -214,9 +237,7 @@ class SpeakWidgetManager {
             Log.d(TAG, "setuWidget (speakWidget)")
 
             val views = RemoteViews(context.packageName, R.layout.speak_widget)
-            views.setTextViewText(R.id.titleText, instance.currentTitle)
-            views.setTextViewText(R.id.statusText, instance.currentStatus)
-            views.setTextViewText(R.id.smallStatusText, instance.currentSmallStatus)
+            views.setTextViewText(R.id.statusText, app.getString(R.string.speak_status_stopped))
 
             fun setupButton(action: String, button: Int, visible: Int) {
                 val intent = Intent(context, javaClass)
@@ -237,8 +258,8 @@ class SpeakWidgetManager {
                     setupButton(b, buttonId, if (buttons.contains(b)) View.VISIBLE else View.GONE)
                 }
             }
-            views.setViewVisibility(if (smallStatus) R.id.statusText else R.id.smallStatusText, View.GONE)
-            if(!showTitle) {
+            val wOptions = widgetOptions.get(this::class) as WidgetOptions
+            if(!wOptions.showTitle) {
                 views.setViewVisibility(R.id.titleText, View.GONE)
             }
             appWidgetManager.updateAppWidget(appWidgetId, views)
@@ -282,17 +303,6 @@ class SpeakWidgetManager {
             }
             settings.save();
         }
-
-
-        companion object {
-            const val ACTION_SPEAK = "action_speak"
-            const val ACTION_REWIND = "action_rewind"
-            const val ACTION_FAST_FORWARD = "action_fast_forward"
-            const val ACTION_STOP = "action_stop"
-            const val ACTION_NEXT = "action_next"
-            const val ACTION_PREV = "action_prev"
-            const val ACTION_SLEEP_TIMER = "action_sleep_timer"
-        }
     }
 
     class SpeakBookmarkWidget : AbstractSpeakWidget() {
@@ -306,32 +316,37 @@ class SpeakWidgetManager {
             if (intent?.action == ACTION_BOOKMARK) {
                 val osisRef = intent.data.host
                 Log.d(TAG, "onReceive osisRef $osisRef")
-                val dto = bookmarkControl.getBookmarkByOsisRef(osisRef)
+                val dto = bookmarkControl.getBookmarkByOsisRef(osisRef) ?: return
                 if (speakControl.isSpeaking || speakControl.isPaused) {
                     speakControl.stop()
                 }
-                speakControl.speakBible(dto.verseRange.start)
+                val book = Books.installed().getBook(dto.playbackSettings?.bookAbbreviation) as SwordBook?
+                if(book != null) {
+                    speakControl.speakBible(book, dto.verseRange.start)
+                } else {
+                    speakControl.speakBible(dto.verseRange.start)
+                }
             }
         }
 
-
         override fun setupWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
-            instance.setupBookmarkWidget(context, appWidgetManager, appWidgetId)
+            instance.updateBookmarkWidget(context, appWidgetManager, appWidgetId)
         }
     }
 
     class SpeakWidget1 : AbstractButtonSpeakWidget() {
         override val buttons: List<String> = listOf(ACTION_REWIND, ACTION_SPEAK)
-        override val smallStatus = true
-        override val showTitle = false
     }
 
     class SpeakWidget2 : AbstractButtonSpeakWidget() {
         override val buttons: List<String> = listOf(ACTION_FAST_FORWARD, ACTION_REWIND, ACTION_SPEAK, ACTION_STOP, ACTION_SLEEP_TIMER)
-        override val smallStatus = true
     }
 
     class SpeakWidget3 : AbstractButtonSpeakWidget() {
         override val buttons: List<String> = listOf(ACTION_FAST_FORWARD, ACTION_NEXT, ACTION_PREV, ACTION_REWIND, ACTION_SPEAK, ACTION_STOP, ACTION_SLEEP_TIMER)
+    }
+
+    class SpeakWidget4 : AbstractButtonSpeakWidget() {
+        override val buttons: List<String> = listOf(ACTION_PREV, ACTION_NEXT, ACTION_SPEAK, ACTION_STOP)
     }
 }
